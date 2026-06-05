@@ -1,0 +1,27 @@
+# Android and Gradle output
+.gradle/
+build/
+*/build/
+captures/
+
+# Local project tooling
+.android-sdk/
+.jdk/
+.tools/
+.tmp/
+local.properties
+
+# IDE/editor files
+.idea/
+*.iml
+.vscode/
+
+# OS noise
+.DS_Store
+Thumbs.db
+
+# Generated APKs and archives
+*.apk
+*.aab
+*.ap_
+*.zip

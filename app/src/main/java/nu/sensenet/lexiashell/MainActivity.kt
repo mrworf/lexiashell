@@ -21,6 +21,9 @@ import android.widget.FrameLayout
 
 class MainActivity : Activity() {
     private lateinit var webView: WebView
+    private var navigationPolicy = CspNavigationPolicy.fromCsp(null, LEXIA_CORE5_URL)
+    @Volatile
+    private var isDestroyed = false
     private var customView: View? = null
     private var originalSystemUiVisibility = 0
 
@@ -48,7 +51,13 @@ class MainActivity : Activity() {
                 override fun shouldOverrideUrlLoading(
                     view: WebView,
                     request: WebResourceRequest,
-                ): Boolean = false
+                ): Boolean {
+                    if (!request.isForMainFrame) {
+                        return false
+                    }
+
+                    return !navigationPolicy.allows(request.url.toString())
+                }
             }
 
             webChromeClient = object : WebChromeClient() {
@@ -81,7 +90,7 @@ class MainActivity : Activity() {
 
         setContentView(webView)
         hideSystemBars()
-        webView.loadUrl(LEXIA_CORE5_URL)
+        loadLexiaAfterPolicyFetch()
     }
 
     override fun onResume() {
@@ -102,6 +111,7 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
+        isDestroyed = true
         if (this::webView.isInitialized) {
             if (customView != null) {
                 customView = null
@@ -173,14 +183,32 @@ class MainActivity : Activity() {
         settings.builtInZoomControls = true
         settings.displayZoomControls = false
         settings.cacheMode = WebSettings.LOAD_DEFAULT
+        // Core5 serves its desktop experience based on user agent.
         settings.userAgentString = DESKTOP_USER_AGENT
     }
 
     private fun configureCookies(webView: WebView) {
         CookieManager.getInstance().apply {
             setAcceptCookie(true)
+            // Core5 authentication depends on cross-site MyLexia cookies.
             setAcceptThirdPartyCookies(webView, true)
         }
+    }
+
+    private fun loadLexiaAfterPolicyFetch() {
+        Thread {
+            val fetchedPolicy = CspPolicyFetcher().fetch(LEXIA_CORE5_URL)
+            if (isDestroyed) {
+                return@Thread
+            }
+
+            runOnUiThread {
+                if (!isDestroyed) {
+                    navigationPolicy = fetchedPolicy
+                    webView.loadUrl(LEXIA_CORE5_URL)
+                }
+            }
+        }.start()
     }
 
     companion object {

@@ -5,6 +5,7 @@ This project is a minimal native Android shell for Lexia Core5.
 ## Implementation Rules
 
 - Keep Android SDK, JDK, Gradle, and other downloaded build tooling project-local when possible.
+- Run Gradle with `GRADLE_USER_HOME=$PWD/.gradle` so wrapper distributions and caches stay project-local.
 - Build the app as a native Kotlin Android application with no additional UI framework.
 - Use `nu.sensenet.lexiashell` for both the Android namespace and application id.
 - Keep the app focused on one behavior: a fullscreen desktop-mode WebView for `https://www.lexiacore5.com`.
@@ -16,7 +17,7 @@ This project is a minimal native Android shell for Lexia Core5.
 After the Android scaffold exists, the canonical validation command is:
 
 ```sh
-./gradlew :app:assembleDebug :app:lintDebug
+GRADLE_USER_HOME=$PWD/.gradle JAVA_HOME=$PWD/.jdk/temurin-17 ./gradlew :app:assembleDebug :app:lintDebug
 ```
 
 For slices before Gradle exists, validate with file inspection and `git status`.

@@ -2,6 +2,7 @@ package nu.sensenet.lexiashell
 
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.content.res.Configuration
 import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
@@ -85,6 +86,37 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        if (this::webView.isInitialized) {
+            webView.onResume()
+            webView.resumeTimers()
+        }
+        hideSystemBars()
+    }
+
+    override fun onPause() {
+        if (this::webView.isInitialized) {
+            webView.onPause()
+            webView.pauseTimers()
+        }
+        super.onPause()
+    }
+
+    override fun onDestroy() {
+        if (this::webView.isInitialized) {
+            if (customView != null) {
+                customView = null
+                setContentView(webView)
+            }
+            webView.stopLoading()
+            webView.webChromeClient = null
+            webView.webViewClient = WebViewClient()
+            webView.destroy()
+        }
+        super.onDestroy()
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
         hideSystemBars()
     }
 

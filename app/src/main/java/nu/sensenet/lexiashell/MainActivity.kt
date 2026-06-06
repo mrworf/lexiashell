@@ -25,6 +25,7 @@ class MainActivity : Activity() {
     @Volatile
     private var isDestroyed = false
     private var customView: View? = null
+    private val customViewSession = CustomViewSession()
     private var originalSystemUiVisibility = 0
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -62,8 +63,7 @@ class MainActivity : Activity() {
 
             webChromeClient = object : WebChromeClient() {
                 override fun onShowCustomView(view: View, callback: CustomViewCallback) {
-                    if (customView != null) {
-                        callback.onCustomViewHidden()
+                    if (!customViewSession.begin(callback)) {
                         return
                     }
 
@@ -80,10 +80,7 @@ class MainActivity : Activity() {
                 }
 
                 override fun onHideCustomView() {
-                    customView = null
-                    window.decorView.systemUiVisibility = originalSystemUiVisibility
-                    setContentView(webView)
-                    hideSystemBars()
+                    hideCustomView()
                 }
             }
         }
@@ -113,10 +110,7 @@ class MainActivity : Activity() {
     override fun onDestroy() {
         isDestroyed = true
         if (this::webView.isInitialized) {
-            if (customView != null) {
-                customView = null
-                setContentView(webView)
-            }
+            hideCustomView()
             webView.stopLoading()
             webView.webChromeClient = null
             webView.webViewClient = WebViewClient()
@@ -209,6 +203,18 @@ class MainActivity : Activity() {
                 }
             }
         }.start()
+    }
+
+    private fun hideCustomView() {
+        if (customView == null) {
+            return
+        }
+
+        customView = null
+        window.decorView.systemUiVisibility = originalSystemUiVisibility
+        setContentView(webView)
+        hideSystemBars()
+        customViewSession.finish()
     }
 
     companion object {

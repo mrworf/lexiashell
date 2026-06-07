@@ -144,19 +144,11 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         logger.debug("MainActivity onResume")
-        if (this::webView.isInitialized) {
-            webView.onResume()
-            webView.resumeTimers()
-        }
         hideSystemBars()
     }
 
     override fun onPause() {
-        logger.debug("MainActivity onPause")
-        if (this::webView.isInitialized) {
-            webView.onPause()
-            webView.pauseTimers()
-        }
+        logger.debug("MainActivity onPause; leaving WebView runtime active")
         super.onPause()
     }
 

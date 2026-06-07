@@ -13,6 +13,7 @@ import android.view.Window
 import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.view.WindowManager
+import android.webkit.ConsoleMessage
 import android.webkit.CookieManager
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
@@ -108,6 +109,18 @@ class MainActivity : Activity() {
             }
 
             webChromeClient = object : WebChromeClient() {
+                override fun onConsoleMessage(consoleMessage: ConsoleMessage): Boolean {
+                    logger.debug(
+                        JavaScriptConsoleLog.format(
+                            level = consoleMessage.messageLevel().name,
+                            message = consoleMessage.message(),
+                            sourceId = consoleMessage.sourceId(),
+                            lineNumber = consoleMessage.lineNumber(),
+                        ),
+                    )
+                    return true
+                }
+
                 override fun onShowCustomView(view: View, callback: CustomViewCallback) {
                     logger.debug("Request to show fullscreen custom view")
                     if (!customViewSession.begin(callback)) {

@@ -1,6 +1,7 @@
 package nu.sensenet.lexiashell
 
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -38,6 +39,67 @@ class CspNavigationPolicyTest {
     }
 
     @Test
+    fun explainsAllowedNavigationDecisions() {
+        val policy = CspNavigationPolicy.fromCsp(
+            csp = """
+                default-src 'self' https://auth.mylexia.com;
+                connect-src *.mylexia.com;
+            """.trimIndent(),
+            bootstrapUrl = BOOTSTRAP_URL,
+        )
+
+        assertDecision(
+            expectedAllowed = true,
+            expectedReason = "allowed exact host www.lexiacore5.com",
+            actual = policy.evaluate("https://www.lexiacore5.com/student"),
+        )
+        assertDecision(
+            expectedAllowed = true,
+            expectedReason = "allowed exact host auth.mylexia.com",
+            actual = policy.evaluate("https://auth.mylexia.com/mylexiaLogin"),
+        )
+        assertDecision(
+            expectedAllowed = true,
+            expectedReason = "allowed wildcard domain mylexia.com for core5-cargo.mylexia.com",
+            actual = policy.evaluate("https://core5-cargo.mylexia.com/core5"),
+        )
+    }
+
+    @Test
+    fun explainsBlockedNavigationDecisions() {
+        val policy = CspNavigationPolicy.fromCsp(
+            csp = "default-src 'self' *.mylexia.com",
+            bootstrapUrl = BOOTSTRAP_URL,
+        )
+
+        assertDecision(
+            expectedAllowed = false,
+            expectedReason = "blocked malformed URL",
+            actual = policy.evaluate("not a url"),
+        )
+        assertDecision(
+            expectedAllowed = false,
+            expectedReason = "blocked non-HTTPS scheme http",
+            actual = policy.evaluate("http://www.lexiacore5.com"),
+        )
+        assertDecision(
+            expectedAllowed = false,
+            expectedReason = "blocked missing host",
+            actual = policy.evaluate("https:///student"),
+        )
+        assertDecision(
+            expectedAllowed = false,
+            expectedReason = "blocked host example.com is not in policy",
+            actual = policy.evaluate("https://example.com"),
+        )
+        assertDecision(
+            expectedAllowed = false,
+            expectedReason = "blocked host mylexia.com is not in policy",
+            actual = policy.evaluate("https://mylexia.com"),
+        )
+    }
+
+    @Test
     fun missingOrEmptyCspFallsBackToBootstrapOriginOnly() {
         val missingPolicy = CspNavigationPolicy.fromCsp(null, BOOTSTRAP_URL)
         val emptyPolicy = CspNavigationPolicy.fromCsp("", BOOTSTRAP_URL)
@@ -50,5 +112,14 @@ class CspNavigationPolicyTest {
 
     private companion object {
         const val BOOTSTRAP_URL = "https://www.lexiacore5.com"
+
+        fun assertDecision(
+            expectedAllowed: Boolean,
+            expectedReason: String,
+            actual: CspNavigationDecision,
+        ) {
+            assertEquals(expectedAllowed, actual.allowed)
+            assertEquals(expectedReason, actual.reason)
+        }
     }
 }

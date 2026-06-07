@@ -7,16 +7,48 @@ class CspNavigationPolicy private constructor(
     private val exactHosts: Set<String>,
     private val wildcardDomains: Set<String>,
 ) {
-    fun allows(url: String): Boolean {
-        val uri = runCatching { URI(url) }.getOrNull() ?: return false
-        if (!uri.scheme.equals("https", ignoreCase = true)) {
-            return false
+    fun allows(url: String): Boolean = evaluate(url).allowed
+
+    fun evaluate(url: String): CspNavigationDecision {
+        val uri = runCatching { URI(url) }.getOrNull()
+            ?: return CspNavigationDecision(
+                allowed = false,
+                reason = "blocked malformed URL",
+            )
+        val scheme = uri.scheme
+        if (!scheme.equals("https", ignoreCase = true)) {
+            return CspNavigationDecision(
+                allowed = false,
+                reason = "blocked non-HTTPS scheme ${scheme ?: "(none)"}",
+            )
         }
 
-        val host = uri.host?.normalizedHost() ?: return false
-        return host in exactHosts || wildcardDomains.any { domain ->
+        val host = uri.host?.normalizedHost()
+            ?: return CspNavigationDecision(
+                allowed = false,
+                reason = "blocked missing host",
+            )
+        if (host in exactHosts) {
+            return CspNavigationDecision(
+                allowed = true,
+                reason = "allowed exact host $host",
+            )
+        }
+
+        val wildcardDomain = wildcardDomains.firstOrNull { domain ->
             host.length > domain.length && host.endsWith(".$domain")
         }
+        if (wildcardDomain != null) {
+            return CspNavigationDecision(
+                allowed = true,
+                reason = "allowed wildcard domain $wildcardDomain for $host",
+            )
+        }
+
+        return CspNavigationDecision(
+            allowed = false,
+            reason = "blocked host $host is not in policy",
+        )
     }
 
     companion object {
@@ -91,6 +123,11 @@ class CspNavigationPolicy private constructor(
             lowercase(Locale.US).trimEnd('.')
     }
 }
+
+data class CspNavigationDecision(
+    val allowed: Boolean,
+    val reason: String,
+)
 
 private sealed class HostSource {
     data class Exact(val host: String) : HostSource()

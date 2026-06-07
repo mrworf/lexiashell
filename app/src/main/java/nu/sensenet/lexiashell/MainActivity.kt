@@ -1,8 +1,10 @@
 package nu.sensenet.lexiashell
 
 import android.annotation.SuppressLint
+import android.annotation.TargetApi
 import android.app.Activity
 import android.content.res.Configuration
+import android.graphics.Bitmap
 import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
@@ -13,7 +15,9 @@ import android.view.WindowInsetsController
 import android.view.WindowManager
 import android.webkit.CookieManager
 import android.webkit.WebChromeClient
+import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -21,6 +25,7 @@ import android.widget.FrameLayout
 
 class MainActivity : Activity() {
     private lateinit var webView: WebView
+    private val logger = AndroidLexiaLogger
     private var navigationPolicy = CspNavigationPolicy.fromCsp(null, LEXIA_CORE5_URL)
     @Volatile
     private var isDestroyed = false
@@ -31,6 +36,7 @@ class MainActivity : Activity() {
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        logger.debug("MainActivity onCreate")
 
         requestWindowFeature(Window.FEATURE_NO_TITLE)
         configureFullscreenWindow()
@@ -47,6 +53,7 @@ class MainActivity : Activity() {
 
             configureSettings(settings)
             configureCookies(this)
+            logger.debug("Configured WebView settings and cookies")
 
             webViewClient = object : WebViewClient() {
                 override fun shouldOverrideUrlLoading(
@@ -54,16 +61,57 @@ class MainActivity : Activity() {
                     request: WebResourceRequest,
                 ): Boolean {
                     if (!request.isForMainFrame) {
+                        logger.debug("Ignoring subframe navigation ${request.url}")
                         return false
                     }
 
-                    return !navigationPolicy.allows(request.url.toString())
+                    val decision = navigationPolicy.evaluate(request.url.toString())
+                    logger.debug(
+                        "Main-frame navigation ${if (decision.allowed) "allowed" else "blocked"} " +
+                            "${request.url}: ${decision.reason}",
+                    )
+                    return !decision.allowed
+                }
+
+                override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
+                    logger.debug("Page started $url")
+                }
+
+                override fun onPageFinished(view: WebView, url: String) {
+                    logger.debug("Page finished $url")
+                }
+
+                @TargetApi(Build.VERSION_CODES.M)
+                override fun onReceivedError(
+                    view: WebView,
+                    request: WebResourceRequest,
+                    error: WebResourceError,
+                ) {
+                    val frame = if (request.isForMainFrame) "main-frame" else "subframe"
+                    logger.error(
+                        "WebView load error for $frame ${request.url}: " +
+                            "${error.errorCode} ${error.description}",
+                    )
+                }
+
+                override fun onReceivedHttpError(
+                    view: WebView,
+                    request: WebResourceRequest,
+                    errorResponse: WebResourceResponse,
+                ) {
+                    val frame = if (request.isForMainFrame) "main-frame" else "subframe"
+                    logger.error(
+                        "WebView HTTP error for $frame ${request.url}: " +
+                            "${errorResponse.statusCode} ${errorResponse.reasonPhrase}",
+                    )
                 }
             }
 
             webChromeClient = object : WebChromeClient() {
                 override fun onShowCustomView(view: View, callback: CustomViewCallback) {
+                    logger.debug("Request to show fullscreen custom view")
                     if (!customViewSession.begin(callback)) {
+                        logger.debug("Rejected fullscreen custom view because one is already active")
                         return
                     }
 
@@ -77,9 +125,11 @@ class MainActivity : Activity() {
                         ),
                     )
                     hideSystemBars()
+                    logger.debug("Fullscreen custom view shown")
                 }
 
                 override fun onHideCustomView() {
+                    logger.debug("Request to hide fullscreen custom view")
                     hideCustomView()
                 }
             }
@@ -87,11 +137,13 @@ class MainActivity : Activity() {
 
         setContentView(webView)
         hideSystemBars()
+        logger.debug("Initial WebView content set; starting policy fetch")
         loadLexiaAfterPolicyFetch()
     }
 
     override fun onResume() {
         super.onResume()
+        logger.debug("MainActivity onResume")
         if (this::webView.isInitialized) {
             webView.onResume()
             webView.resumeTimers()
@@ -100,6 +152,7 @@ class MainActivity : Activity() {
     }
 
     override fun onPause() {
+        logger.debug("MainActivity onPause")
         if (this::webView.isInitialized) {
             webView.onPause()
             webView.pauseTimers()
@@ -108,6 +161,7 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
+        logger.debug("MainActivity onDestroy")
         isDestroyed = true
         if (this::webView.isInitialized) {
             hideCustomView()
@@ -121,11 +175,13 @@ class MainActivity : Activity() {
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
+        logger.debug("Configuration changed: orientation=${newConfig.orientation}")
         hideSystemBars()
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
+        logger.debug("Window focus changed: hasFocus=$hasFocus")
         if (hasFocus) {
             hideSystemBars()
         }
@@ -191,15 +247,20 @@ class MainActivity : Activity() {
 
     private fun loadLexiaAfterPolicyFetch() {
         Thread {
-            val fetchedPolicy = CspPolicyFetcher().fetch(LEXIA_CORE5_URL)
+            logger.debug("Policy fetch thread started for $LEXIA_CORE5_URL")
+            val fetchedPolicy = CspPolicyFetcher(logger = logger).fetch(LEXIA_CORE5_URL)
             if (isDestroyed) {
+                logger.debug("Skipping Lexia load because activity was destroyed")
                 return@Thread
             }
 
             runOnUiThread {
                 if (!isDestroyed) {
                     navigationPolicy = fetchedPolicy
+                    logger.debug("Policy installed; loading $LEXIA_CORE5_URL")
                     webView.loadUrl(LEXIA_CORE5_URL)
+                } else {
+                    logger.debug("Skipping Lexia load on UI thread because activity was destroyed")
                 }
             }
         }.start()
@@ -207,6 +268,7 @@ class MainActivity : Activity() {
 
     private fun hideCustomView() {
         if (customView == null) {
+            logger.debug("No fullscreen custom view to hide")
             return
         }
 
@@ -215,6 +277,7 @@ class MainActivity : Activity() {
         setContentView(webView)
         hideSystemBars()
         customViewSession.finish()
+        logger.debug("Fullscreen custom view hidden")
     }
 
     companion object {

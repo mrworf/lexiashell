@@ -536,6 +536,9 @@ class MainActivity : Activity() {
                 FileDescriptorDiagnostics.captureProcSelf(),
             ),
         )
+        webView.evaluateJavascript(WebViewGarbageCollectionProbe.script()) { result ->
+            logger.debug(WebViewGarbageCollectionProbe.resultLine(result))
+        }
     }
 
     private fun reportGameState(isPageLoading: Boolean) {

@@ -7,12 +7,12 @@ import org.junit.Test
 
 class WebViewRenderingPolicyTest {
     @Test
-    fun selectsSoftwareLayerType() {
-        assertEquals(View.LAYER_TYPE_SOFTWARE, WebViewRenderingPolicy.layerType())
+    fun selectsDefaultLayerType() {
+        assertEquals(View.LAYER_TYPE_NONE, WebViewRenderingPolicy.layerType())
     }
 
     @Test
-    fun doesNotUseHardwareLayerType() {
-        assertNotEquals(View.LAYER_TYPE_HARDWARE, WebViewRenderingPolicy.layerType())
+    fun doesNotUseSoftwareLayerType() {
+        assertNotEquals(View.LAYER_TYPE_SOFTWARE, WebViewRenderingPolicy.layerType())
     }
 }

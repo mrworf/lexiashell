@@ -116,6 +116,14 @@ class RuntimeDiagnosticsTest {
     }
 
     @Test
+    fun formatsWebViewLayerType() {
+        assertEquals(
+            "WebView layer type: configured=software(1)",
+            RuntimeDiagnostics.webViewLayerTypeLine(layerType = 1),
+        )
+    }
+
+    @Test
     fun formatsRenderProcessGone() {
         assertEquals(
             "WebView render process gone: didCrash=true rendererPriorityAtExit=0",

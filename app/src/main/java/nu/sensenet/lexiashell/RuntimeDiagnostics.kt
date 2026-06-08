@@ -38,6 +38,9 @@ object RuntimeDiagnostics {
     fun webViewHardwareAccelerationLine(isHardwareAccelerated: Boolean): String =
         "WebView hardware acceleration: enabled=$isHardwareAccelerated"
 
+    fun webViewLayerTypeLine(layerType: Int): String =
+        "WebView layer type: configured=${webViewLayerTypeName(layerType)}($layerType)"
+
     fun renderProcessGoneLine(didCrash: Boolean, rendererPriorityAtExit: Int): String =
         "WebView render process gone: " +
             "didCrash=$didCrash rendererPriorityAtExit=$rendererPriorityAtExit"
@@ -86,6 +89,14 @@ object RuntimeDiagnostics {
             40 -> "background"
             60 -> "moderate"
             80 -> "complete"
+            else -> "unknown"
+        }
+
+    private fun webViewLayerTypeName(layerType: Int): String =
+        when (layerType) {
+            0 -> "none"
+            1 -> "software"
+            2 -> "hardware"
             else -> "unknown"
         }
 

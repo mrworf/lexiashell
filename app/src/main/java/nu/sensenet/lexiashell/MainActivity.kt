@@ -84,6 +84,7 @@ class MainActivity : Activity() {
             isLongClickable = false
             setOnLongClickListener { true }
             setBackgroundColor(Color.BLACK)
+            setLayerType(WebViewRenderingPolicy.layerType(), null)
 
             configureSettings(settings)
             clearCache(true)
@@ -356,6 +357,11 @@ class MainActivity : Activity() {
         logger.debug(
             RuntimeDiagnostics.webViewHardwareAccelerationLine(
                 isHardwareAccelerated = webView.isHardwareAccelerated,
+            ),
+        )
+        logger.debug(
+            RuntimeDiagnostics.webViewLayerTypeLine(
+                layerType = webView.layerType,
             ),
         )
     }

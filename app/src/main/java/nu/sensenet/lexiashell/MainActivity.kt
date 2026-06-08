@@ -86,6 +86,7 @@ class MainActivity : Activity() {
             setBackgroundColor(Color.BLACK)
 
             configureSettings(settings)
+            clearCache(true)
             configureCookies(this)
             logger.debug("Configured WebView settings and cookies")
 
@@ -567,7 +568,7 @@ class MainActivity : Activity() {
         settings.setSupportZoom(true)
         settings.builtInZoomControls = true
         settings.displayZoomControls = false
-        settings.cacheMode = WebSettings.LOAD_DEFAULT
+        settings.cacheMode = WebViewCachePolicy.cacheMode()
         // Core5 serves its desktop experience based on user agent.
         settings.userAgentString = DESKTOP_USER_AGENT
     }

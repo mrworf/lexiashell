@@ -1,3 +1,7 @@
 <resources>
     <string name="app_name">Lexia Shell</string>
+    <string name="battery_exemption_dialog_title">Keep Lexia Open</string>
+    <string name="battery_exemption_dialog_message">Your device may pause or close Lexia while lessons are in progress. To help lessons stay open, please allow Lexia Shell to use unrestricted battery in the next screen.</string>
+    <string name="battery_exemption_dialog_continue">Continue</string>
+    <string name="battery_exemption_dialog_not_now">Not now</string>
 </resources>

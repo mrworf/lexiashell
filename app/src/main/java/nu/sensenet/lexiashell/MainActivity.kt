@@ -3,6 +3,7 @@ package nu.sensenet.lexiashell
 import android.annotation.SuppressLint
 import android.annotation.TargetApi
 import android.app.Activity
+import android.app.AlertDialog
 import android.app.GameManager
 import android.app.GameState
 import android.app.KeyguardManager
@@ -336,10 +337,34 @@ class MainActivity : Activity() {
             return
         }
 
+        logger.debug("Showing battery optimization exemption explanation")
+        AlertDialog.Builder(this)
+            .setTitle(R.string.battery_exemption_dialog_title)
+            .setMessage(R.string.battery_exemption_dialog_message)
+            .setPositiveButton(R.string.battery_exemption_dialog_continue) { _, _ ->
+                markBatteryOptimizationExemptionRequested(preferences)
+                launchBatteryOptimizationExemptionRequest()
+            }
+            .setNegativeButton(R.string.battery_exemption_dialog_not_now) { _, _ ->
+                markBatteryOptimizationExemptionRequested(preferences)
+                logger.debug("Battery optimization exemption request postponed by user")
+            }
+            .setOnCancelListener {
+                markBatteryOptimizationExemptionRequested(preferences)
+                logger.debug("Battery optimization exemption explanation dismissed")
+            }
+            .show()
+    }
+
+    private fun markBatteryOptimizationExemptionRequested(
+        preferences: android.content.SharedPreferences,
+    ) {
         preferences.edit()
             .putBoolean(BATTERY_OPTIMIZATION_REQUESTED_KEY, true)
             .apply()
+    }
 
+    private fun launchBatteryOptimizationExemptionRequest() {
         logger.debug("Requesting battery optimization exemption")
         try {
             startActivity(

@@ -3,6 +3,9 @@ package nu.sensenet.lexiashell
 import android.annotation.SuppressLint
 import android.annotation.TargetApi
 import android.app.Activity
+import android.app.KeyguardManager
+import android.app.admin.DevicePolicyManager
+import android.content.Context
 import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.Color
@@ -158,6 +161,7 @@ class MainActivity : Activity() {
         super.onResume()
         logger.debug("MainActivity onResume")
         hideSystemBars()
+        startLockTaskWhenPermitted()
     }
 
     override fun onPause() {
@@ -194,8 +198,10 @@ class MainActivity : Activity() {
 
     private fun configureFullscreenWindow() {
         window.setFlags(
-            WindowManager.LayoutParams.FLAG_FULLSCREEN,
-            WindowManager.LayoutParams.FLAG_FULLSCREEN,
+            WindowManager.LayoutParams.FLAG_FULLSCREEN or
+                WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON,
+            WindowManager.LayoutParams.FLAG_FULLSCREEN or
+                WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON,
         )
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
@@ -224,6 +230,25 @@ class MainActivity : Activity() {
                     View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
                     View.SYSTEM_UI_FLAG_LAYOUT_STABLE
         }
+    }
+
+    private fun startLockTaskWhenPermitted() {
+        val devicePolicyManager =
+            getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+        val keyguardManager = getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
+        val isLockTaskPermitted = devicePolicyManager.isLockTaskPermitted(packageName)
+        val isKeyguardLocked = keyguardManager.isKeyguardLocked
+
+        if (!LockTaskStartPolicy.shouldStart(isLockTaskPermitted, isKeyguardLocked)) {
+            logger.debug(
+                "Skipping lock task start: " +
+                    "permitted=$isLockTaskPermitted keyguardLocked=$isKeyguardLocked",
+            )
+            return
+        }
+
+        logger.debug("Starting lock task mode")
+        startLockTask()
     }
 
     @Suppress("DEPRECATION")

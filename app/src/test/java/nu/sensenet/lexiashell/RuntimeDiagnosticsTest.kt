@@ -83,54 +83,34 @@ class RuntimeDiagnosticsTest {
     }
 
     @Test
-    fun formatsWebViewProvider() {
+    fun formatsGeckoViewVersion() {
         assertEquals(
-            "WebView provider: package=com.google.android.webview " +
-                "versionName=149.0.7827.48 versionCode=782704803",
-            RuntimeDiagnostics.webViewProviderLine(
-                packageName = "com.google.android.webview",
-                versionName = "149.0.7827.48",
-                versionCode = 782704803,
-            ),
+            "GeckoView version: 151.0.20260601110758",
+            RuntimeDiagnostics.geckoViewVersionLine("151.0.20260601110758"),
         )
     }
 
     @Test
-    fun formatsUnavailableWebViewProvider() {
+    fun formatsGeckoViewHardwareAccelerationState() {
         assertEquals(
-            "WebView provider: package=unavailable versionName=unavailable versionCode=unavailable",
-            RuntimeDiagnostics.webViewProviderLine(
-                packageName = null,
-                versionName = null,
-                versionCode = null,
-            ),
+            "GeckoView hardware acceleration: enabled=true",
+            RuntimeDiagnostics.geckoViewHardwareAccelerationLine(isHardwareAccelerated = true),
         )
     }
 
     @Test
-    fun formatsWebViewHardwareAccelerationState() {
+    fun formatsGeckoContentProcessCrash() {
         assertEquals(
-            "WebView hardware acceleration: enabled=true",
-            RuntimeDiagnostics.webViewHardwareAccelerationLine(isHardwareAccelerated = true),
+            "GeckoView content process crashed",
+            RuntimeDiagnostics.geckoContentProcessCrashLine(),
         )
     }
 
     @Test
-    fun formatsWebViewLayerType() {
+    fun formatsGeckoContentProcessKill() {
         assertEquals(
-            "WebView layer type: configured=software(1)",
-            RuntimeDiagnostics.webViewLayerTypeLine(layerType = 1),
-        )
-    }
-
-    @Test
-    fun formatsRenderProcessGone() {
-        assertEquals(
-            "WebView render process gone: didCrash=true rendererPriorityAtExit=0",
-            RuntimeDiagnostics.renderProcessGoneLine(
-                didCrash = true,
-                rendererPriorityAtExit = 0,
-            ),
+            "GeckoView content process killed",
+            RuntimeDiagnostics.geckoContentProcessKillLine(),
         )
     }
 

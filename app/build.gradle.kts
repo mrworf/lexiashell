@@ -5,6 +5,8 @@ plugins {
     id("com.android.application")
 }
 
+val geckoViewVersion = "151.0.20260601110758"
+
 fun gitOutput(vararg args: String): String =
     providers.exec {
         commandLine("git", *args)
@@ -27,7 +29,7 @@ android {
         applicationId = "nu.sensenet.lexiashell"
 
         minSdk {
-            version = release(21)
+            version = release(26)
         }
 
         targetSdk {
@@ -56,6 +58,16 @@ android {
             "BUILD_TIMESTAMP",
             quotedBuildConfigString(DateTimeFormatter.ISO_ZONED_DATE_TIME.format(ZonedDateTime.now())),
         )
+        buildConfigField(
+            "String",
+            "GECKOVIEW_VERSION",
+            quotedBuildConfigString(geckoViewVersion),
+        )
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
 
     buildFeatures {
@@ -64,5 +76,7 @@ android {
 }
 
 dependencies {
+    implementation("org.mozilla.geckoview:geckoview:$geckoViewVersion")
+
     testImplementation("junit:junit:4.13.2")
 }

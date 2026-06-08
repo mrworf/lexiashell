@@ -25,25 +25,17 @@ object RuntimeDiagnostics {
             "processElapsedMs=${processElapsedRealtimeMs ?: "unavailable"} " +
             "activityElapsedMs=$activityElapsedRealtimeMs"
 
-    fun webViewProviderLine(
-        packageName: String?,
-        versionName: String?,
-        versionCode: Long?,
-    ): String =
-        "WebView provider: " +
-            "package=${packageName ?: "unavailable"} " +
-            "versionName=${versionName ?: "unavailable"} " +
-            "versionCode=${versionCode ?: "unavailable"}"
+    fun geckoViewVersionLine(versionName: String): String =
+        "GeckoView version: $versionName"
 
-    fun webViewHardwareAccelerationLine(isHardwareAccelerated: Boolean): String =
-        "WebView hardware acceleration: enabled=$isHardwareAccelerated"
+    fun geckoViewHardwareAccelerationLine(isHardwareAccelerated: Boolean): String =
+        "GeckoView hardware acceleration: enabled=$isHardwareAccelerated"
 
-    fun webViewLayerTypeLine(layerType: Int): String =
-        "WebView layer type: configured=${webViewLayerTypeName(layerType)}($layerType)"
+    fun geckoContentProcessCrashLine(): String =
+        "GeckoView content process crashed"
 
-    fun renderProcessGoneLine(didCrash: Boolean, rendererPriorityAtExit: Int): String =
-        "WebView render process gone: " +
-            "didCrash=$didCrash rendererPriorityAtExit=$rendererPriorityAtExit"
+    fun geckoContentProcessKillLine(): String =
+        "GeckoView content process killed"
 
     fun recentExitLine(
         processName: String?,
@@ -89,14 +81,6 @@ object RuntimeDiagnostics {
             40 -> "background"
             60 -> "moderate"
             80 -> "complete"
-            else -> "unknown"
-        }
-
-    private fun webViewLayerTypeName(layerType: Int): String =
-        when (layerType) {
-            0 -> "none"
-            1 -> "software"
-            2 -> "hardware"
             else -> "unknown"
         }
 

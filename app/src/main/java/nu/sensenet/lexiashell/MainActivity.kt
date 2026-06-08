@@ -1,6 +1,5 @@
 package nu.sensenet.lexiashell
 
-import android.annotation.SuppressLint
 import android.annotation.TargetApi
 import android.app.Activity
 import android.app.ActivityManager
@@ -12,9 +11,7 @@ import android.app.admin.DevicePolicyManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ApplicationInfo
-import android.content.pm.PackageInfo
 import android.content.res.Configuration
-import android.graphics.Bitmap
 import android.graphics.Color
 import android.net.Uri
 import android.os.Build
@@ -30,27 +27,23 @@ import android.view.Window
 import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.view.WindowManager
-import android.webkit.ConsoleMessage
-import android.webkit.CookieManager
-import android.webkit.RenderProcessGoneDetail
-import android.webkit.WebChromeClient
-import android.webkit.WebResourceError
-import android.webkit.WebResourceRequest
-import android.webkit.WebResourceResponse
-import android.webkit.WebSettings
-import android.webkit.WebView
-import android.webkit.WebViewClient
 import android.widget.FrameLayout
+import org.mozilla.geckoview.AllowOrDeny
+import org.mozilla.geckoview.GeckoResult
+import org.mozilla.geckoview.GeckoRuntime
+import org.mozilla.geckoview.GeckoRuntimeSettings
+import org.mozilla.geckoview.GeckoSession
+import org.mozilla.geckoview.GeckoSessionSettings
+import org.mozilla.geckoview.GeckoView
+import org.mozilla.geckoview.WebRequestError
 
 class MainActivity : Activity() {
-    private lateinit var webView: WebView
+    private lateinit var geckoView: GeckoView
+    private lateinit var geckoSession: GeckoSession
     private val logger = AndroidLexiaLogger
     private var navigationPolicy = CspNavigationPolicy.fromCsp(null, LEXIA_CORE5_URL)
     @Volatile
     private var isDestroyed = false
-    private var customView: View? = null
-    private val customViewSession = CustomViewSession()
-    private var originalSystemUiVisibility = 0
     private val diagnosticsHandler = Handler(Looper.getMainLooper())
     private val activityCreatedElapsedRealtimeMs = SystemClock.elapsedRealtime()
     private var isFdDiagnosticsRunning = false
@@ -65,7 +58,6 @@ class MainActivity : Activity() {
         }
     }
 
-    @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         logger.debug(BuildProvenance.startupLogLine())
@@ -75,7 +67,7 @@ class MainActivity : Activity() {
         requestWindowFeature(Window.FEATURE_NO_TITLE)
         configureFullscreenWindow()
 
-        webView = WebView(this).apply {
+        geckoView = GeckoView(this).apply {
             layoutParams = FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT,
@@ -84,125 +76,14 @@ class MainActivity : Activity() {
             isLongClickable = false
             setOnLongClickListener { true }
             setBackgroundColor(Color.BLACK)
-            setLayerType(WebViewRenderingPolicy.layerType(), null)
-
-            configureSettings(settings)
-            clearCache(true)
-            configureCookies(this)
-            logger.debug("Configured WebView settings and cookies")
-
-            webViewClient = object : WebViewClient() {
-                override fun shouldOverrideUrlLoading(
-                    view: WebView,
-                    request: WebResourceRequest,
-                ): Boolean {
-                    if (!request.isForMainFrame) {
-                        logger.debug("Ignoring subframe navigation ${request.url}")
-                        return false
-                    }
-
-                    val decision = navigationPolicy.evaluate(request.url.toString())
-                    logger.debug(
-                        "Main-frame navigation ${if (decision.allowed) "allowed" else "blocked"} " +
-                            "${request.url}: ${decision.reason}",
-                    )
-                    return !decision.allowed
-                }
-
-                override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
-                    logger.debug("Page started $url")
-                    reportGameState(isPageLoading = true)
-                }
-
-                override fun onPageFinished(view: WebView, url: String) {
-                    logger.debug("Page finished $url")
-                    reportGameState(isPageLoading = false)
-                }
-
-                @TargetApi(Build.VERSION_CODES.M)
-                override fun onReceivedError(
-                    view: WebView,
-                    request: WebResourceRequest,
-                    error: WebResourceError,
-                ) {
-                    val frame = if (request.isForMainFrame) "main-frame" else "subframe"
-                    logger.error(
-                        "WebView load error for $frame ${request.url}: " +
-                            "${error.errorCode} ${error.description}",
-                    )
-                }
-
-                override fun onReceivedHttpError(
-                    view: WebView,
-                    request: WebResourceRequest,
-                    errorResponse: WebResourceResponse,
-                ) {
-                    val frame = if (request.isForMainFrame) "main-frame" else "subframe"
-                    logger.error(
-                        "WebView HTTP error for $frame ${request.url}: " +
-                            "${errorResponse.statusCode} ${errorResponse.reasonPhrase}",
-                    )
-                }
-
-                @TargetApi(Build.VERSION_CODES.O)
-                override fun onRenderProcessGone(
-                    view: WebView,
-                    detail: RenderProcessGoneDetail,
-                ): Boolean {
-                    logger.error(
-                        RuntimeDiagnostics.renderProcessGoneLine(
-                            didCrash = detail.didCrash(),
-                            rendererPriorityAtExit = detail.rendererPriorityAtExit(),
-                        ),
-                    )
-                    return super.onRenderProcessGone(view, detail)
-                }
-            }
-
-            webChromeClient = object : WebChromeClient() {
-                override fun onConsoleMessage(consoleMessage: ConsoleMessage): Boolean {
-                    logger.debug(
-                        JavaScriptConsoleLog.format(
-                            level = consoleMessage.messageLevel().name,
-                            message = consoleMessage.message(),
-                            sourceId = consoleMessage.sourceId(),
-                            lineNumber = consoleMessage.lineNumber(),
-                        ),
-                    )
-                    return true
-                }
-
-                override fun onShowCustomView(view: View, callback: CustomViewCallback) {
-                    logger.debug("Request to show fullscreen custom view")
-                    if (!customViewSession.begin(callback)) {
-                        logger.debug("Rejected fullscreen custom view because one is already active")
-                        return
-                    }
-
-                    originalSystemUiVisibility = window.decorView.systemUiVisibility
-                    customView = view
-                    setContentView(
-                        view,
-                        FrameLayout.LayoutParams(
-                            FrameLayout.LayoutParams.MATCH_PARENT,
-                            FrameLayout.LayoutParams.MATCH_PARENT,
-                        ),
-                    )
-                    hideSystemBars()
-                    logger.debug("Fullscreen custom view shown")
-                }
-
-                override fun onHideCustomView() {
-                    logger.debug("Request to hide fullscreen custom view")
-                    hideCustomView()
-                }
-            }
         }
+        geckoSession = createGeckoSession()
 
-        setContentView(webView)
-        logWebViewRuntimeDiagnostics()
+        setContentView(geckoView)
+        geckoView.setSession(geckoSession)
+        logGeckoViewRuntimeDiagnostics()
         hideSystemBars()
-        logger.debug("Initial WebView content set; starting policy fetch")
+        logger.debug("Initial GeckoView content set; starting policy fetch")
         loadLexiaAfterPolicyFetch()
     }
 
@@ -217,7 +98,7 @@ class MainActivity : Activity() {
     }
 
     override fun onPause() {
-        logger.debug("MainActivity onPause; leaving WebView runtime active")
+        logger.debug("MainActivity onPause; leaving GeckoView runtime active")
         stopFdDiagnostics()
         super.onPause()
     }
@@ -226,12 +107,16 @@ class MainActivity : Activity() {
         logger.debug("MainActivity onDestroy")
         isDestroyed = true
         stopFdDiagnostics()
-        if (this::webView.isInitialized) {
-            hideCustomView()
-            webView.stopLoading()
-            webView.webChromeClient = null
-            webView.webViewClient = WebViewClient()
-            webView.destroy()
+        if (this::geckoSession.isInitialized) {
+            geckoSession.stop()
+            geckoSession.setNavigationDelegate(null)
+            geckoSession.setProgressDelegate(null)
+            geckoSession.setContentDelegate(null)
+            geckoSession.setPermissionDelegate(null)
+            if (this::geckoView.isInitialized) {
+                geckoView.releaseSession()
+            }
+            geckoSession.close()
         }
         super.onDestroy()
     }
@@ -249,6 +134,9 @@ class MainActivity : Activity() {
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
         logger.debug("Configuration changed: orientation=${newConfig.orientation}")
+        if (this::geckoSession.isInitialized) {
+            processGeckoRuntime(this).configurationChanged(newConfig)
+        }
         hideSystemBars()
     }
 
@@ -259,6 +147,150 @@ class MainActivity : Activity() {
             hideSystemBars()
         }
     }
+
+    private fun createGeckoSession(): GeckoSession {
+        val settings = GeckoSessionSettings()
+        GeckoSessionSettingsPolicy.applyTo(settings)
+
+        return GeckoSession(settings).apply {
+            setNavigationDelegate(createNavigationDelegate())
+            setProgressDelegate(createProgressDelegate())
+            setContentDelegate(createContentDelegate())
+            setPermissionDelegate(createPermissionDelegate())
+            open(processGeckoRuntime(this@MainActivity))
+        }
+    }
+
+    private fun createNavigationDelegate(): GeckoSession.NavigationDelegate =
+        object : GeckoSession.NavigationDelegate {
+            override fun onLoadRequest(
+                session: GeckoSession,
+                request: GeckoSession.NavigationDelegate.LoadRequest,
+            ): GeckoResult<AllowOrDeny>? {
+                if (request.target == GeckoSession.NavigationDelegate.TARGET_WINDOW_NEW) {
+                    logger.debug("Blocked new-window navigation ${request.uri}")
+                    return GeckoResult.fromValue(AllowOrDeny.DENY)
+                }
+
+                val decision = navigationPolicy.evaluate(request.uri)
+                logger.debug(
+                    "Main-frame navigation ${if (decision.allowed) "allowed" else "blocked"} " +
+                        "${request.uri}: ${decision.reason}",
+                )
+                return GeckoResult.fromValue(
+                    if (decision.allowed) AllowOrDeny.ALLOW else AllowOrDeny.DENY,
+                )
+            }
+
+            override fun onSubframeLoadRequest(
+                session: GeckoSession,
+                request: GeckoSession.NavigationDelegate.LoadRequest,
+            ): GeckoResult<AllowOrDeny>? {
+                logger.debug("Ignoring subframe navigation ${request.uri}")
+                return GeckoResult.fromValue(AllowOrDeny.ALLOW)
+            }
+
+            override fun onNewSession(
+                session: GeckoSession,
+                uri: String,
+            ): GeckoResult<GeckoSession>? {
+                logger.debug("Blocked new GeckoView session for $uri")
+                return null
+            }
+
+            override fun onLoadError(
+                session: GeckoSession,
+                uri: String?,
+                error: WebRequestError,
+            ): GeckoResult<String>? {
+                logger.error(
+                    "GeckoView load error for ${uri ?: "(unknown URL)"}: " +
+                        "category=${error.category} code=${error.code} " +
+                        "message=${error.message ?: "unavailable"}",
+                    error,
+                )
+                return null
+            }
+        }
+
+    private fun createProgressDelegate(): GeckoSession.ProgressDelegate =
+        object : GeckoSession.ProgressDelegate {
+            override fun onPageStart(session: GeckoSession, url: String) {
+                logger.debug("Page started $url")
+                reportGameState(isPageLoading = true)
+            }
+
+            override fun onPageStop(session: GeckoSession, success: Boolean) {
+                logger.debug("Page finished success=$success")
+                reportGameState(isPageLoading = false)
+            }
+        }
+
+    private fun createContentDelegate(): GeckoSession.ContentDelegate =
+        object : GeckoSession.ContentDelegate {
+            override fun onFullScreen(session: GeckoSession, fullScreen: Boolean) {
+                logger.debug(
+                    "GeckoView fullscreen ${if (fullScreen) "entered" else "exited"}",
+                )
+                hideSystemBars()
+            }
+
+            override fun onFocusRequest(session: GeckoSession) {
+                geckoView.requestFocus()
+            }
+
+            override fun onCrash(session: GeckoSession) {
+                logger.error(RuntimeDiagnostics.geckoContentProcessCrashLine())
+                reportGameState(isPageLoading = false)
+            }
+
+            override fun onKill(session: GeckoSession) {
+                logger.error(RuntimeDiagnostics.geckoContentProcessKillLine())
+                reportGameState(isPageLoading = false)
+            }
+        }
+
+    private fun createPermissionDelegate(): GeckoSession.PermissionDelegate =
+        object : GeckoSession.PermissionDelegate {
+            override fun onContentPermissionRequest(
+                session: GeckoSession,
+                perm: GeckoSession.PermissionDelegate.ContentPermission,
+            ): GeckoResult<Int>? {
+                val value = GeckoContentPermissionPolicy.valueFor(perm.permission)
+                logger.debug(
+                    "GeckoView content permission " +
+                        "${GeckoContentPermissionPolicy.decisionName(value)} " +
+                        "permission=${perm.permission} uri=${perm.uri}",
+                )
+                return GeckoResult.fromValue(value)
+            }
+
+            override fun onAndroidPermissionsRequest(
+                session: GeckoSession,
+                permissions: Array<String>?,
+                callback: GeckoSession.PermissionDelegate.Callback,
+            ) {
+                logger.debug(
+                    "Rejected GeckoView Android permission request " +
+                        permissions.orEmpty().joinToString(prefix = "[", postfix = "]"),
+                )
+                callback.reject()
+            }
+
+            override fun onMediaPermissionRequest(
+                session: GeckoSession,
+                uri: String,
+                video: Array<GeckoSession.PermissionDelegate.MediaSource>?,
+                audio: Array<GeckoSession.PermissionDelegate.MediaSource>?,
+                callback: GeckoSession.PermissionDelegate.MediaCallback,
+            ) {
+                logger.debug(
+                    "Rejected GeckoView media permission request for $uri " +
+                        "video=${video.orEmpty().size} audio=${audio.orEmpty().size}",
+                )
+                callback.reject()
+            }
+        }
 
     private fun configureFullscreenWindow() {
         window.setFlags(
@@ -345,42 +377,14 @@ class MainActivity : Activity() {
         logRecentExitReasons()
     }
 
-    private fun logWebViewRuntimeDiagnostics() {
-        val packageInfo = currentWebViewPackageInfo()
+    private fun logGeckoViewRuntimeDiagnostics() {
+        logger.debug(RuntimeDiagnostics.geckoViewVersionLine(BuildConfig.GECKOVIEW_VERSION))
         logger.debug(
-            RuntimeDiagnostics.webViewProviderLine(
-                packageName = packageInfo?.packageName,
-                versionName = packageInfo?.versionName,
-                versionCode = packageInfo?.versionCodeCompat(),
-            ),
-        )
-        logger.debug(
-            RuntimeDiagnostics.webViewHardwareAccelerationLine(
-                isHardwareAccelerated = webView.isHardwareAccelerated,
-            ),
-        )
-        logger.debug(
-            RuntimeDiagnostics.webViewLayerTypeLine(
-                layerType = webView.layerType,
+            RuntimeDiagnostics.geckoViewHardwareAccelerationLine(
+                isHardwareAccelerated = geckoView.isHardwareAccelerated,
             ),
         )
     }
-
-    private fun currentWebViewPackageInfo(): PackageInfo? {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
-            return null
-        }
-
-        return WebView.getCurrentWebViewPackage()
-    }
-
-    @Suppress("DEPRECATION")
-    private fun PackageInfo.versionCodeCompat(): Long =
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            longVersionCode
-        } else {
-            versionCode.toLong()
-        }
 
     private fun processElapsedRealtimeMs(): Long? {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) {
@@ -536,9 +540,6 @@ class MainActivity : Activity() {
                 FileDescriptorDiagnostics.captureProcSelf(),
             ),
         )
-        webView.evaluateJavascript(WebViewGarbageCollectionProbe.script()) { result ->
-            logger.debug(WebViewGarbageCollectionProbe.resultLine(result))
-        }
     }
 
     private fun reportGameState(isPageLoading: Boolean) {
@@ -566,30 +567,6 @@ class MainActivity : Activity() {
         logger.debug("Reported game state: isLoading=${report.isLoading}")
     }
 
-    @Suppress("DEPRECATION")
-    private fun configureSettings(settings: WebSettings) {
-        settings.javaScriptEnabled = true
-        settings.domStorageEnabled = true
-        settings.databaseEnabled = true
-        settings.mediaPlaybackRequiresUserGesture = false
-        settings.loadWithOverviewMode = true
-        settings.useWideViewPort = true
-        settings.setSupportZoom(true)
-        settings.builtInZoomControls = true
-        settings.displayZoomControls = false
-        settings.cacheMode = WebViewCachePolicy.cacheMode()
-        // Core5 serves its desktop experience based on user agent.
-        settings.userAgentString = DESKTOP_USER_AGENT
-    }
-
-    private fun configureCookies(webView: WebView) {
-        CookieManager.getInstance().apply {
-            setAcceptCookie(true)
-            // Core5 authentication depends on cross-site MyLexia cookies.
-            setAcceptThirdPartyCookies(webView, true)
-        }
-    }
-
     private fun loadLexiaAfterPolicyFetch() {
         Thread {
             logger.debug("Policy fetch thread started for $LEXIA_CORE5_URL")
@@ -603,26 +580,16 @@ class MainActivity : Activity() {
                 if (!isDestroyed) {
                     navigationPolicy = fetchedPolicy
                     logger.debug("Policy installed; loading $LEXIA_CORE5_URL")
-                    webView.loadUrl(LEXIA_CORE5_URL)
+                    geckoSession.load(
+                        GeckoSession.Loader()
+                            .uri(LEXIA_CORE5_URL)
+                            .flags(GeckoLoadPolicy.flags()),
+                    )
                 } else {
                     logger.debug("Skipping Lexia load on UI thread because activity was destroyed")
                 }
             }
         }.start()
-    }
-
-    private fun hideCustomView() {
-        if (customView == null) {
-            logger.debug("No fullscreen custom view to hide")
-            return
-        }
-
-        customView = null
-        window.decorView.systemUiVisibility = originalSystemUiVisibility
-        setContentView(webView)
-        hideSystemBars()
-        customViewSession.finish()
-        logger.debug("Fullscreen custom view hidden")
     }
 
     companion object {
@@ -632,8 +599,19 @@ class MainActivity : Activity() {
             "battery_optimization_exemption_requested"
         private const val FD_DIAGNOSTICS_INTERVAL_MS = 30_000L
         private const val RECENT_EXIT_REASON_LIMIT = 3
-        private const val DESKTOP_USER_AGENT =
-            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 " +
-                "(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+        private val GECKO_RUNTIME_LOCK = Any()
+        @Volatile
+        private var geckoRuntime: GeckoRuntime? = null
+
+        private fun processGeckoRuntime(context: Context): GeckoRuntime {
+            geckoRuntime?.let { return it }
+
+            return synchronized(GECKO_RUNTIME_LOCK) {
+                geckoRuntime ?: GeckoRuntime.create(
+                    context.applicationContext,
+                    GeckoRuntimeSettings.Builder().build(),
+                ).also { geckoRuntime = it }
+            }
+        }
     }
 }

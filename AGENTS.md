@@ -8,7 +8,7 @@ This project is a minimal native Android shell for Lexia Core5.
 - Run Gradle with `GRADLE_USER_HOME=$PWD/.gradle` so wrapper distributions and caches stay project-local.
 - Build the app as a native Kotlin Android application with no additional UI framework.
 - Use `nu.sensenet.lexiashell` for both the Android namespace and application id.
-- Keep the app focused on one behavior: a fullscreen desktop-mode WebView for `https://www.lexiacore5.com`.
+- Keep the app focused on one behavior: a desktop-mode WebView for `https://www.lexiacore5.com` with Android system bars visible.
 - Do not add app chrome, navigation controls, settings screens, or extra UX unless explicitly requested.
 - Device and emulator testing are out of scope unless explicitly requested; default verification is build-only.
 

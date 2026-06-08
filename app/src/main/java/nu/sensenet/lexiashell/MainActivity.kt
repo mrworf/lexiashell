@@ -8,13 +8,16 @@ import android.app.GameState
 import android.app.KeyguardManager
 import android.app.admin.DevicePolicyManager
 import android.content.Context
+import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.Color
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
+import android.provider.Settings
 import android.view.View
 import android.view.Window
 import android.view.WindowInsets
@@ -169,6 +172,7 @@ class MainActivity : Activity() {
         super.onResume()
         logger.debug("MainActivity onResume")
         hideSystemBars()
+        requestBatteryOptimizationExemptionWhenNeeded()
         startLockTaskWhenPermitted()
         reportGameState(isPageLoading = false)
     }
@@ -311,6 +315,43 @@ class MainActivity : Activity() {
         return powerManager.isIgnoringBatteryOptimizations(packageName)
     }
 
+    private fun requestBatteryOptimizationExemptionWhenNeeded() {
+        val isIgnoringBatteryOptimizations = isIgnoringBatteryOptimizations() ?: return
+        val preferences = getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+        val hasRequestedBefore = preferences.getBoolean(
+            BATTERY_OPTIMIZATION_REQUESTED_KEY,
+            false,
+        )
+
+        if (!BatteryOptimizationRequestPolicy.shouldRequest(
+                sdkInt = Build.VERSION.SDK_INT,
+                isIgnoringBatteryOptimizations = isIgnoringBatteryOptimizations,
+                hasRequestedBefore = hasRequestedBefore,
+            )
+        ) {
+            logger.debug(
+                "Skipping battery optimization exemption request: " +
+                    "ignoring=$isIgnoringBatteryOptimizations requestedBefore=$hasRequestedBefore",
+            )
+            return
+        }
+
+        preferences.edit()
+            .putBoolean(BATTERY_OPTIMIZATION_REQUESTED_KEY, true)
+            .apply()
+
+        logger.debug("Requesting battery optimization exemption")
+        try {
+            startActivity(
+                Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                    data = Uri.parse("package:$packageName")
+                },
+            )
+        } catch (exception: RuntimeException) {
+            logger.error("Battery optimization exemption request failed", exception)
+        }
+    }
+
     private fun reportGameState(isPageLoading: Boolean) {
         if (!GameStateReportPolicy.shouldReport(Build.VERSION.SDK_INT)) {
             return
@@ -397,6 +438,9 @@ class MainActivity : Activity() {
 
     companion object {
         private const val LEXIA_CORE5_URL = "https://www.lexiacore5.com"
+        private const val PREFERENCES_NAME = "lexia_shell"
+        private const val BATTERY_OPTIMIZATION_REQUESTED_KEY =
+            "battery_optimization_exemption_requested"
         private const val DESKTOP_USER_AGENT =
             "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 " +
                 "(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"

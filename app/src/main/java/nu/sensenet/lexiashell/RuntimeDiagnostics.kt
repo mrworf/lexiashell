@@ -17,6 +17,51 @@ object RuntimeDiagnostics {
     fun memoryPressureLine(level: Int): String =
         "Memory pressure: level=$level meaning=${trimMemoryLevelName(level)}"
 
+    fun runtimeUptimeLine(
+        processElapsedRealtimeMs: Long?,
+        activityElapsedRealtimeMs: Long,
+    ): String =
+        "Runtime uptime: " +
+            "processElapsedMs=${processElapsedRealtimeMs ?: "unavailable"} " +
+            "activityElapsedMs=$activityElapsedRealtimeMs"
+
+    fun webViewProviderLine(
+        packageName: String?,
+        versionName: String?,
+        versionCode: Long?,
+    ): String =
+        "WebView provider: " +
+            "package=${packageName ?: "unavailable"} " +
+            "versionName=${versionName ?: "unavailable"} " +
+            "versionCode=${versionCode ?: "unavailable"}"
+
+    fun webViewHardwareAccelerationLine(isHardwareAccelerated: Boolean): String =
+        "WebView hardware acceleration: enabled=$isHardwareAccelerated"
+
+    fun renderProcessGoneLine(didCrash: Boolean, rendererPriorityAtExit: Int): String =
+        "WebView render process gone: " +
+            "didCrash=$didCrash rendererPriorityAtExit=$rendererPriorityAtExit"
+
+    fun recentExitLine(
+        processName: String?,
+        reason: Int,
+        status: Int,
+        importance: Int,
+        pssKb: Long,
+        rssKb: Long,
+        timestampMs: Long,
+        description: String?,
+    ): String =
+        "Recent exit: " +
+            "process=${oneLineOrUnavailable(processName)} " +
+            "reason=$reason " +
+            "status=$status " +
+            "importance=$importance " +
+            "pssKb=$pssKb " +
+            "rssKb=$rssKb " +
+            "timestampMs=$timestampMs " +
+            "description=${oneLineOrUnavailable(description)}"
+
     private fun applicationCategoryName(category: Int): String =
         when (category) {
             -1 -> "undefined"
@@ -43,4 +88,11 @@ object RuntimeDiagnostics {
             80 -> "complete"
             else -> "unknown"
         }
+
+    private fun oneLineOrUnavailable(value: String?): String =
+        value
+            ?.replace('\n', ' ')
+            ?.replace('\r', ' ')
+            ?.takeIf { it.isNotBlank() }
+            ?: "unavailable"
 }

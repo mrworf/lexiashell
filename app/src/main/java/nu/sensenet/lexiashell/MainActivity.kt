@@ -3,6 +3,7 @@ package nu.sensenet.lexiashell
 import android.annotation.SuppressLint
 import android.annotation.TargetApi
 import android.app.Activity
+import android.app.ActivityManager
 import android.app.AlertDialog
 import android.app.GameManager
 import android.app.GameState
@@ -11,13 +12,18 @@ import android.app.admin.DevicePolicyManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ApplicationInfo
+import android.content.pm.PackageInfo
 import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.os.PowerManager
+import android.os.Process
+import android.os.SystemClock
 import android.provider.Settings
 import android.view.View
 import android.view.Window
@@ -26,6 +32,7 @@ import android.view.WindowInsetsController
 import android.view.WindowManager
 import android.webkit.ConsoleMessage
 import android.webkit.CookieManager
+import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
@@ -44,6 +51,19 @@ class MainActivity : Activity() {
     private var customView: View? = null
     private val customViewSession = CustomViewSession()
     private var originalSystemUiVisibility = 0
+    private val diagnosticsHandler = Handler(Looper.getMainLooper())
+    private val activityCreatedElapsedRealtimeMs = SystemClock.elapsedRealtime()
+    private var isFdDiagnosticsRunning = false
+    private val fdDiagnosticsRunnable = object : Runnable {
+        override fun run() {
+            if (!isFdDiagnosticsRunning || isDestroyed) {
+                return
+            }
+
+            logFdSnapshot()
+            diagnosticsHandler.postDelayed(this, FD_DIAGNOSTICS_INTERVAL_MS)
+        }
+    }
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -121,6 +141,20 @@ class MainActivity : Activity() {
                             "${errorResponse.statusCode} ${errorResponse.reasonPhrase}",
                     )
                 }
+
+                @TargetApi(Build.VERSION_CODES.O)
+                override fun onRenderProcessGone(
+                    view: WebView,
+                    detail: RenderProcessGoneDetail,
+                ): Boolean {
+                    logger.error(
+                        RuntimeDiagnostics.renderProcessGoneLine(
+                            didCrash = detail.didCrash(),
+                            rendererPriorityAtExit = detail.rendererPriorityAtExit(),
+                        ),
+                    )
+                    return super.onRenderProcessGone(view, detail)
+                }
             }
 
             webChromeClient = object : WebChromeClient() {
@@ -164,6 +198,7 @@ class MainActivity : Activity() {
         }
 
         setContentView(webView)
+        logWebViewRuntimeDiagnostics()
         hideSystemBars()
         logger.debug("Initial WebView content set; starting policy fetch")
         loadLexiaAfterPolicyFetch()
@@ -176,16 +211,19 @@ class MainActivity : Activity() {
         requestBatteryOptimizationExemptionWhenNeeded()
         startLockTaskWhenPermitted()
         reportGameState(isPageLoading = false)
+        startFdDiagnostics()
     }
 
     override fun onPause() {
         logger.debug("MainActivity onPause; leaving WebView runtime active")
+        stopFdDiagnostics()
         super.onPause()
     }
 
     override fun onDestroy() {
         logger.debug("MainActivity onDestroy")
         isDestroyed = true
+        stopFdDiagnostics()
         if (this::webView.isInitialized) {
             hideCustomView()
             webView.stopLoading()
@@ -296,6 +334,95 @@ class MainActivity : Activity() {
                 isIgnoringBatteryOptimizations = isIgnoringBatteryOptimizations(),
             ),
         )
+        logger.debug(
+            RuntimeDiagnostics.runtimeUptimeLine(
+                processElapsedRealtimeMs = processElapsedRealtimeMs(),
+                activityElapsedRealtimeMs = activityElapsedRealtimeMs(),
+            ),
+        )
+        logRecentExitReasons()
+    }
+
+    private fun logWebViewRuntimeDiagnostics() {
+        val packageInfo = currentWebViewPackageInfo()
+        logger.debug(
+            RuntimeDiagnostics.webViewProviderLine(
+                packageName = packageInfo?.packageName,
+                versionName = packageInfo?.versionName,
+                versionCode = packageInfo?.versionCodeCompat(),
+            ),
+        )
+        logger.debug(
+            RuntimeDiagnostics.webViewHardwareAccelerationLine(
+                isHardwareAccelerated = webView.isHardwareAccelerated,
+            ),
+        )
+    }
+
+    private fun currentWebViewPackageInfo(): PackageInfo? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            return null
+        }
+
+        return WebView.getCurrentWebViewPackage()
+    }
+
+    @Suppress("DEPRECATION")
+    private fun PackageInfo.versionCodeCompat(): Long =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            longVersionCode
+        } else {
+            versionCode.toLong()
+        }
+
+    private fun processElapsedRealtimeMs(): Long? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) {
+            return null
+        }
+
+        return SystemClock.elapsedRealtime() - Process.getStartElapsedRealtime()
+    }
+
+    private fun activityElapsedRealtimeMs(): Long =
+        SystemClock.elapsedRealtime() - activityCreatedElapsedRealtimeMs
+
+    private fun logRecentExitReasons() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            logger.debug("Recent exits: unavailable before Android 11")
+            return
+        }
+
+        logRecentExitReasonsOnSupportedSdk()
+    }
+
+    @TargetApi(Build.VERSION_CODES.R)
+    private fun logRecentExitReasonsOnSupportedSdk() {
+        val activityManager = getSystemService(ActivityManager::class.java)
+        val exitReasons = activityManager.getHistoricalProcessExitReasons(
+            packageName,
+            0,
+            RECENT_EXIT_REASON_LIMIT,
+        )
+
+        if (exitReasons.isEmpty()) {
+            logger.debug("Recent exits: none")
+            return
+        }
+
+        for (exitReason in exitReasons) {
+            logger.debug(
+                RuntimeDiagnostics.recentExitLine(
+                    processName = exitReason.processName,
+                    reason = exitReason.reason,
+                    status = exitReason.status,
+                    importance = exitReason.importance,
+                    pssKb = exitReason.pss,
+                    rssKb = exitReason.rss,
+                    timestampMs = exitReason.timestamp,
+                    description = exitReason.description,
+                ),
+            )
+        }
     }
 
     private fun currentGameMode(): Int? {
@@ -375,6 +502,33 @@ class MainActivity : Activity() {
         } catch (exception: RuntimeException) {
             logger.error("Battery optimization exemption request failed", exception)
         }
+    }
+
+    private fun startFdDiagnostics() {
+        if (isFdDiagnosticsRunning) {
+            return
+        }
+
+        isFdDiagnosticsRunning = true
+        logFdSnapshot()
+        diagnosticsHandler.postDelayed(fdDiagnosticsRunnable, FD_DIAGNOSTICS_INTERVAL_MS)
+    }
+
+    private fun stopFdDiagnostics() {
+        if (!isFdDiagnosticsRunning) {
+            return
+        }
+
+        isFdDiagnosticsRunning = false
+        diagnosticsHandler.removeCallbacks(fdDiagnosticsRunnable)
+    }
+
+    private fun logFdSnapshot() {
+        logger.debug(
+            FileDescriptorDiagnostics.snapshotLine(
+                FileDescriptorDiagnostics.captureProcSelf(),
+            ),
+        )
     }
 
     private fun reportGameState(isPageLoading: Boolean) {
@@ -466,6 +620,8 @@ class MainActivity : Activity() {
         private const val PREFERENCES_NAME = "lexia_shell"
         private const val BATTERY_OPTIMIZATION_REQUESTED_KEY =
             "battery_optimization_exemption_requested"
+        private const val FD_DIAGNOSTICS_INTERVAL_MS = 30_000L
+        private const val RECENT_EXIT_REASON_LIMIT = 3
         private const val DESKTOP_USER_AGENT =
             "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 " +
                 "(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"

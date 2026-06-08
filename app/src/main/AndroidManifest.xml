@@ -6,10 +6,21 @@
     <application
         android:allowBackup="false"
         android:appCategory="game"
+        android:icon="@mipmap/ic_launcher"
         android:isGame="true"
         android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/AppTheme">
+        <meta-data
+            android:name="nu.sensenet.lexiashell.AUTHOR"
+            android:value="Henric Andersson (github@sensenet.nu)" />
+        <meta-data
+            android:name="nu.sensenet.lexiashell.PROJECT_URL"
+            android:value="https://github.com/mrworf/lexiashell" />
+        <meta-data
+            android:name="nu.sensenet.lexiashell.LICENSE"
+            android:value="GPL-3.0-or-later" />
         <meta-data
             android:name="android.game_mode_config"
             android:resource="@xml/game_mode_config" />

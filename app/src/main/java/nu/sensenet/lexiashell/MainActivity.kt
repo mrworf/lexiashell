@@ -10,6 +10,9 @@ import android.os.Build
 import android.os.Bundle
 import android.view.View
 import android.view.Window
+import android.view.WindowInsets
+import android.view.WindowInsetsController
+import android.view.WindowManager
 import android.webkit.ConsoleMessage
 import android.webkit.CookieManager
 import android.webkit.WebChromeClient
@@ -29,6 +32,7 @@ class MainActivity : Activity() {
     private var isDestroyed = false
     private var customView: View? = null
     private val customViewSession = CustomViewSession()
+    private var originalSystemUiVisibility = 0
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -36,6 +40,7 @@ class MainActivity : Activity() {
         logger.debug("MainActivity onCreate")
 
         requestWindowFeature(Window.FEATURE_NO_TITLE)
+        configureFullscreenWindow()
 
         webView = WebView(this).apply {
             layoutParams = FrameLayout.LayoutParams(
@@ -123,6 +128,7 @@ class MainActivity : Activity() {
                         return
                     }
 
+                    originalSystemUiVisibility = window.decorView.systemUiVisibility
                     customView = view
                     setContentView(
                         view,
@@ -131,6 +137,7 @@ class MainActivity : Activity() {
                             FrameLayout.LayoutParams.MATCH_PARENT,
                         ),
                     )
+                    hideSystemBars()
                     logger.debug("Fullscreen custom view shown")
                 }
 
@@ -142,6 +149,7 @@ class MainActivity : Activity() {
         }
 
         setContentView(webView)
+        hideSystemBars()
         logger.debug("Initial WebView content set; starting policy fetch")
         loadLexiaAfterPolicyFetch()
     }
@@ -149,6 +157,7 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         logger.debug("MainActivity onResume")
+        hideSystemBars()
     }
 
     override fun onPause() {
@@ -172,11 +181,49 @@ class MainActivity : Activity() {
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
         logger.debug("Configuration changed: orientation=${newConfig.orientation}")
+        hideSystemBars()
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         logger.debug("Window focus changed: hasFocus=$hasFocus")
+        if (hasFocus) {
+            hideSystemBars()
+        }
+    }
+
+    private fun configureFullscreenWindow() {
+        window.setFlags(
+            WindowManager.LayoutParams.FLAG_FULLSCREEN,
+            WindowManager.LayoutParams.FLAG_FULLSCREEN,
+        )
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            window.attributes = window.attributes.apply {
+                layoutInDisplayCutoutMode =
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            }
+        }
+    }
+
+    private fun hideSystemBars() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            window.setDecorFitsSystemWindows(false)
+            window.insetsController?.let { controller ->
+                controller.systemBarsBehavior =
+                    WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                controller.hide(WindowInsets.Type.systemBars())
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            window.decorView.systemUiVisibility =
+                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
+                    View.SYSTEM_UI_FLAG_FULLSCREEN or
+                    View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+                    View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+                    View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
+                    View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+        }
     }
 
     @Suppress("DEPRECATION")
@@ -231,7 +278,9 @@ class MainActivity : Activity() {
         }
 
         customView = null
+        window.decorView.systemUiVisibility = originalSystemUiVisibility
         setContentView(webView)
+        hideSystemBars()
         customViewSession.finish()
         logger.debug("Fullscreen custom view hidden")
     }

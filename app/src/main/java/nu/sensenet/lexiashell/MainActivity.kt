@@ -8,11 +8,13 @@ import android.app.GameState
 import android.app.KeyguardManager
 import android.app.admin.DevicePolicyManager
 import android.content.Context
+import android.content.pm.ApplicationInfo
 import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
 import android.view.View
 import android.view.Window
 import android.view.WindowInsets
@@ -43,6 +45,7 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         logger.debug(BuildProvenance.startupLogLine())
+        logRuntimeDiagnostics()
         logger.debug("MainActivity onCreate")
 
         requestWindowFeature(Window.FEATURE_NO_TITLE)
@@ -188,6 +191,16 @@ class MainActivity : Activity() {
         super.onDestroy()
     }
 
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        logger.debug(RuntimeDiagnostics.memoryPressureLine(level))
+    }
+
+    override fun onLowMemory() {
+        super.onLowMemory()
+        logger.debug("Memory pressure: onLowMemory")
+    }
+
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
         logger.debug("Configuration changed: orientation=${newConfig.orientation}")
@@ -255,6 +268,47 @@ class MainActivity : Activity() {
 
         logger.debug("Starting lock task mode")
         startLockTask()
+    }
+
+    @Suppress("DEPRECATION")
+    private fun logRuntimeDiagnostics() {
+        val applicationCategory =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                applicationInfo.category
+            } else {
+                ApplicationInfo.CATEGORY_UNDEFINED
+            }
+        val legacyIsGame = applicationInfo.flags and ApplicationInfo.FLAG_IS_GAME != 0
+        logger.debug(
+            RuntimeDiagnostics.gameClassificationLine(
+                applicationCategory = applicationCategory,
+                legacyIsGame = legacyIsGame,
+                gameMode = currentGameMode(),
+            ),
+        )
+        logger.debug(
+            RuntimeDiagnostics.batteryOptimizationLine(
+                isIgnoringBatteryOptimizations = isIgnoringBatteryOptimizations(),
+            ),
+        )
+    }
+
+    private fun currentGameMode(): Int? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            return null
+        }
+
+        val gameManager = getSystemService(GameManager::class.java) ?: return null
+        return gameManager.gameMode
+    }
+
+    private fun isIgnoringBatteryOptimizations(): Boolean? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+            return null
+        }
+
+        val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+        return powerManager.isIgnoringBatteryOptimizations(packageName)
     }
 
     private fun reportGameState(isPageLoading: Boolean) {

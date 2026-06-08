@@ -19,10 +19,12 @@ class CspPolicyFetcherTest {
             },
         )
 
-        val policy = fetcher.fetch(BOOTSTRAP_URL)
+        val result = fetcher.fetch(BOOTSTRAP_URL)
 
-        assertTrue(policy.allows("https://auth.mylexia.com/mylexiaLogin"))
-        assertTrue(policy.allows("https://core5-cargo.mylexia.com/core5"))
+        assertTrue(result.policy.allows("https://auth.mylexia.com/mylexiaLogin"))
+        assertTrue(result.policy.allows("https://core5-cargo.mylexia.com/core5"))
+        assertTrue(result.status == CspFetchStatus.HEADER_FOUND)
+        assertFalse(result.hasTransportFailure)
         assertTrue(logger.debugMessages.any { it.contains("Fetching CSP header with HEAD") })
         assertTrue(logger.debugMessages.any { it.contains("Fetched CSP header for $BOOTSTRAP_URL") })
         assertFalse(logger.debugMessages.any { it.contains("falling back to GET") })
@@ -43,9 +45,11 @@ class CspPolicyFetcherTest {
             },
         )
 
-        val policy = fetcher.fetch(BOOTSTRAP_URL)
+        val result = fetcher.fetch(BOOTSTRAP_URL)
 
-        assertTrue(policy.allows("https://auth.mylexia.com/mylexiaLogin"))
+        assertTrue(result.policy.allows("https://auth.mylexia.com/mylexiaLogin"))
+        assertTrue(result.status == CspFetchStatus.HEADER_FOUND)
+        assertFalse(result.hasTransportFailure)
         assertTrue(logger.debugMessages.any { it.contains("No CSP header from HEAD") })
         assertTrue(logger.debugMessages.any { it.contains("Fetching CSP header with GET") })
         assertTrue(logger.errorMessages.isEmpty())
@@ -61,10 +65,12 @@ class CspPolicyFetcherTest {
             },
         )
 
-        val policy = fetcher.fetch(BOOTSTRAP_URL)
+        val result = fetcher.fetch(BOOTSTRAP_URL)
 
-        assertTrue(policy.allows("https://www.lexiacore5.com/student"))
-        assertFalse(policy.allows("https://auth.mylexia.com/mylexiaLogin"))
+        assertTrue(result.policy.allows("https://www.lexiacore5.com/student"))
+        assertFalse(result.policy.allows("https://auth.mylexia.com/mylexiaLogin"))
+        assertTrue(result.status == CspFetchStatus.TRANSPORT_FAILED)
+        assertTrue(result.hasTransportFailure)
         assertTrue(logger.errorMessages.any { it.contains("CSP HEAD fetch failed") })
         assertTrue(logger.errorMessages.any { it.contains("CSP GET fetch failed") })
         assertTrue(logger.debugMessages.any { it.contains("using bootstrap-origin-only policy") })
@@ -78,10 +84,12 @@ class CspPolicyFetcherTest {
             headerSource = CspHeaderSource { _, _, _ -> null },
         )
 
-        val policy = fetcher.fetch(BOOTSTRAP_URL)
+        val result = fetcher.fetch(BOOTSTRAP_URL)
 
-        assertTrue(policy.allows("https://www.lexiacore5.com/student"))
-        assertFalse(policy.allows("https://auth.mylexia.com/mylexiaLogin"))
+        assertTrue(result.policy.allows("https://www.lexiacore5.com/student"))
+        assertFalse(result.policy.allows("https://auth.mylexia.com/mylexiaLogin"))
+        assertTrue(result.status == CspFetchStatus.HEADER_MISSING)
+        assertFalse(result.hasTransportFailure)
         assertTrue(logger.debugMessages.any { it.contains("No CSP header from HEAD") })
         assertTrue(logger.debugMessages.any { it.contains("using bootstrap-origin-only policy") })
         assertTrue(logger.errorMessages.isEmpty())

@@ -28,6 +28,10 @@ import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.view.WindowManager
 import android.widget.FrameLayout
+import android.widget.ImageView
+import android.widget.LinearLayout
+import android.widget.ProgressBar
+import android.widget.TextView
 import org.mozilla.geckoview.AllowOrDeny
 import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.GeckoRuntime
@@ -38,10 +42,15 @@ import org.mozilla.geckoview.GeckoView
 import org.mozilla.geckoview.WebRequestError
 
 class MainActivity : Activity() {
+    private lateinit var rootLayout: FrameLayout
     private lateinit var geckoView: GeckoView
+    private lateinit var loadingOverlay: View
     private lateinit var geckoSession: GeckoSession
     private val logger = AndroidLexiaLogger
     private var navigationPolicy = CspNavigationPolicy.fromCsp(null, LEXIA_CORE5_URL)
+    private var loadingFailureDialog: AlertDialog? = null
+    private var isGeckoSessionClosed = true
+    private var isLoadingOverlayActive = true
     @Volatile
     private var isDestroyed = false
     private val diagnosticsHandler = Handler(Looper.getMainLooper())
@@ -67,19 +76,26 @@ class MainActivity : Activity() {
         requestWindowFeature(Window.FEATURE_NO_TITLE)
         configureFullscreenWindow()
 
+        rootLayout = FrameLayout(this).apply {
+            setBackgroundColor(Color.BLACK)
+        }
         geckoView = GeckoView(this).apply {
             layoutParams = FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT,
             )
 
+            alpha = 0f
             isLongClickable = false
             setOnLongClickListener { true }
             setBackgroundColor(Color.BLACK)
         }
+        loadingOverlay = createLoadingOverlay()
         geckoSession = createGeckoSession()
 
-        setContentView(geckoView)
+        rootLayout.addView(geckoView)
+        rootLayout.addView(loadingOverlay)
+        setContentView(rootLayout)
         geckoView.setSession(geckoSession)
         logGeckoViewRuntimeDiagnostics()
         hideSystemBars()
@@ -108,15 +124,7 @@ class MainActivity : Activity() {
         isDestroyed = true
         stopFdDiagnostics()
         if (this::geckoSession.isInitialized) {
-            geckoSession.stop()
-            geckoSession.setNavigationDelegate(null)
-            geckoSession.setProgressDelegate(null)
-            geckoSession.setContentDelegate(null)
-            geckoSession.setPermissionDelegate(null)
-            if (this::geckoView.isInitialized) {
-                geckoView.releaseSession()
-            }
-            geckoSession.close()
+            closeGeckoSession()
         }
         super.onDestroy()
     }
@@ -158,6 +166,7 @@ class MainActivity : Activity() {
             setContentDelegate(createContentDelegate())
             setPermissionDelegate(createPermissionDelegate())
             open(processGeckoRuntime(this@MainActivity))
+            isGeckoSessionClosed = false
         }
     }
 
@@ -207,7 +216,13 @@ class MainActivity : Activity() {
                     "GeckoView load error for ${uri ?: "(unknown URL)"}: " +
                         "category=${error.category} code=${error.code} " +
                         "message=${error.message ?: "unavailable"}",
-                    error,
+                        error,
+                )
+                handleBrowserLoadEvent(
+                    BrowserLoadEvent.LOAD_ERROR,
+                    "Lexia Shell could not load ${uri ?: LEXIA_CORE5_URL}. " +
+                        "GeckoView reported category=${error.category}, code=${error.code}, " +
+                        "message=${error.message ?: "unavailable"}.",
                 )
                 return null
             }
@@ -217,12 +232,24 @@ class MainActivity : Activity() {
         object : GeckoSession.ProgressDelegate {
             override fun onPageStart(session: GeckoSession, url: String) {
                 logger.debug("Page started $url")
+                if (isLoadingOverlayActive) {
+                    showLoadingOverlay()
+                }
                 reportGameState(isPageLoading = true)
             }
 
             override fun onPageStop(session: GeckoSession, success: Boolean) {
                 logger.debug("Page finished success=$success")
                 reportGameState(isPageLoading = false)
+                handleBrowserLoadEvent(
+                    if (success) {
+                        BrowserLoadEvent.PAGE_STOP_SUCCESS
+                    } else {
+                        BrowserLoadEvent.PAGE_STOP_FAILURE
+                    },
+                    "Lexia Shell started loading $LEXIA_CORE5_URL, but GeckoView reported that " +
+                        "the page did not finish successfully.",
+                )
             }
         }
 
@@ -242,11 +269,19 @@ class MainActivity : Activity() {
             override fun onCrash(session: GeckoSession) {
                 logger.error(RuntimeDiagnostics.geckoContentProcessCrashLine())
                 reportGameState(isPageLoading = false)
+                handleBrowserLoadEvent(
+                    BrowserLoadEvent.CONTENT_CRASH,
+                    "The embedded GeckoView browser process crashed while loading Lexia.",
+                )
             }
 
             override fun onKill(session: GeckoSession) {
                 logger.error(RuntimeDiagnostics.geckoContentProcessKillLine())
                 reportGameState(isPageLoading = false)
+                handleBrowserLoadEvent(
+                    BrowserLoadEvent.CONTENT_KILL,
+                    "Android stopped the embedded GeckoView browser process while loading Lexia.",
+                )
             }
         }
 
@@ -291,6 +326,177 @@ class MainActivity : Activity() {
                 callback.reject()
             }
         }
+
+    private fun createLoadingOverlay(): View {
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = android.view.Gravity.CENTER
+            setBackgroundColor(Color.BLACK)
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT,
+            )
+            setPadding(dp(24), dp(24), dp(24), dp(24))
+        }
+
+        content.addView(
+            ImageView(this).apply {
+                setImageResource(R.drawable.lexia_shell_logo)
+                adjustViewBounds = true
+                contentDescription = getString(R.string.app_name)
+                layoutParams = LinearLayout.LayoutParams(dp(180), dp(180)).apply {
+                    bottomMargin = dp(28)
+                }
+            },
+        )
+        content.addView(
+            TextView(this).apply {
+                text = getString(R.string.loading_message)
+                setTextColor(Color.WHITE)
+                textSize = 20f
+                gravity = android.view.Gravity.CENTER
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply {
+                    bottomMargin = dp(18)
+                }
+            },
+        )
+        content.addView(
+            ProgressBar(this).apply {
+                isIndeterminate = true
+                layoutParams = LinearLayout.LayoutParams(dp(48), dp(48))
+            },
+        )
+
+        return content
+    }
+
+    private fun dp(value: Int): Int =
+        (value * resources.displayMetrics.density).toInt()
+
+    private fun showLoadingOverlay() {
+        if (!this::geckoView.isInitialized || !this::loadingOverlay.isInitialized) {
+            return
+        }
+
+        geckoView.animate().cancel()
+        geckoView.alpha = 0f
+        loadingOverlay.animate().cancel()
+        loadingOverlay.alpha = 1f
+        loadingOverlay.visibility = View.VISIBLE
+    }
+
+    private fun handleBrowserLoadEvent(event: BrowserLoadEvent, detail: String) {
+        when (LoadingRecoveryPolicy.actionFor(event)) {
+            BrowserLoadAction.REVEAL_BROWSER -> revealBrowser()
+            BrowserLoadAction.SHOW_FAILURE -> showLoadingFailure(detail)
+        }
+    }
+
+    private fun revealBrowser() {
+        if (isDestroyed) {
+            return
+        }
+
+        loadingFailureDialog?.dismiss()
+        loadingFailureDialog = null
+        isLoadingOverlayActive = false
+        geckoView.visibility = View.VISIBLE
+        geckoView.animate()
+            .alpha(1f)
+            .setDuration(LoadingRecoveryPolicy.BROWSER_REVEAL_ANIMATION_MS)
+            .withEndAction {
+                if (!isDestroyed) {
+                    loadingOverlay.visibility = View.GONE
+                }
+            }
+            .start()
+    }
+
+    private fun showLoadingFailure(detail: String) {
+        if (isDestroyed || loadingFailureDialog?.isShowing == true) {
+            return
+        }
+
+        isLoadingOverlayActive = true
+        showLoadingOverlay()
+        loadingFailureDialog = AlertDialog.Builder(this)
+            .setTitle(R.string.loading_failure_dialog_title)
+            .setMessage(detail)
+            .setPositiveButton(R.string.loading_failure_dialog_retry) { _, _ ->
+                handleFailureDialogAction(FailureDialogAction.RETRY)
+            }
+            .setNegativeButton(R.string.loading_failure_dialog_quit) { _, _ ->
+                handleFailureDialogAction(FailureDialogAction.QUIT)
+            }
+            .setCancelable(false)
+            .show()
+    }
+
+    private fun handleFailureDialogAction(action: FailureDialogAction) {
+        loadingFailureDialog = null
+        if (LoadingRecoveryPolicy.retryClearsStorage(action)) {
+            retryWithClearedBrowserData()
+            return
+        }
+
+        if (LoadingRecoveryPolicy.quitsApp(action)) {
+            quitApp()
+        }
+    }
+
+    private fun retryWithClearedBrowserData() {
+        logger.debug("Retry requested; clearing GeckoView storage before reload")
+        isLoadingOverlayActive = true
+        showLoadingOverlay()
+        resetGeckoSession()
+
+        processGeckoRuntime(this)
+            .storageController
+            .clearData(LoadingRecoveryPolicy.storageClearFlags())
+            .accept(
+                {
+                    logger.debug("GeckoView storage cleared; retrying Lexia load")
+                    loadLexiaAfterPolicyFetch()
+                },
+                { throwable ->
+                    logger.error("GeckoView storage clearing failed; retrying anyway", throwable)
+                    loadLexiaAfterPolicyFetch()
+                },
+            )
+    }
+
+    private fun resetGeckoSession() {
+        closeGeckoSession()
+        geckoSession = createGeckoSession()
+        geckoView.setSession(geckoSession)
+        logGeckoViewRuntimeDiagnostics()
+    }
+
+    private fun closeGeckoSession() {
+        if (isGeckoSessionClosed) {
+            return
+        }
+
+        geckoSession.stop()
+        geckoSession.setNavigationDelegate(null)
+        geckoSession.setProgressDelegate(null)
+        geckoSession.setContentDelegate(null)
+        geckoSession.setPermissionDelegate(null)
+        if (this::geckoView.isInitialized) {
+            geckoView.releaseSession()
+        }
+        geckoSession.close()
+        isGeckoSessionClosed = true
+    }
+
+    private fun quitApp() {
+        logger.debug("Quit requested from loading failure dialog")
+        closeGeckoSession()
+        finishAndRemoveTask()
+    }
 
     private fun configureFullscreenWindow() {
         window.setFlags(
@@ -570,7 +776,7 @@ class MainActivity : Activity() {
     private fun loadLexiaAfterPolicyFetch() {
         Thread {
             logger.debug("Policy fetch thread started for $LEXIA_CORE5_URL")
-            val fetchedPolicy = CspPolicyFetcher(logger = logger).fetch(LEXIA_CORE5_URL)
+            val fetchResult = CspPolicyFetcher(logger = logger).fetch(LEXIA_CORE5_URL)
             if (isDestroyed) {
                 logger.debug("Skipping Lexia load because activity was destroyed")
                 return@Thread
@@ -578,7 +784,18 @@ class MainActivity : Activity() {
 
             runOnUiThread {
                 if (!isDestroyed) {
-                    navigationPolicy = fetchedPolicy
+                    if (fetchResult.hasTransportFailure) {
+                        logger.error("CSP fetch failed; showing loading failure dialog")
+                        showLoadingFailure(
+                            "Lexia Shell could not fetch the security policy for " +
+                                "$LEXIA_CORE5_URL. This usually means the network is unavailable, " +
+                                "DNS failed, or Lexia did not respond in time.",
+                        )
+                        reportGameState(isPageLoading = false)
+                        return@runOnUiThread
+                    }
+
+                    navigationPolicy = fetchResult.policy
                     logger.debug("Policy installed; loading $LEXIA_CORE5_URL")
                     geckoSession.load(
                         GeckoSession.Loader()

@@ -7,37 +7,73 @@ class CspPolicyFetcher(
     private val logger: LexiaLogger = AndroidLexiaLogger,
     private val headerSource: CspHeaderSource = HttpCspHeaderSource(),
 ) {
-    fun fetch(url: String): CspNavigationPolicy {
+    fun fetch(url: String): CspFetchResult {
         val headCsp = fetchCsp(url, method = "HEAD")
-        if (headCsp == null) {
+        if (headCsp.header == null) {
             logger.debug("No CSP header from HEAD $url; falling back to GET")
         }
 
-        val csp = headCsp ?: fetchCsp(url, method = "GET")
+        val getCsp = if (headCsp.header == null) {
+            fetchCsp(url, method = "GET")
+        } else {
+            CspHeaderFetchResult.notAttempted()
+        }
+        val csp = headCsp.header ?: getCsp.header
         if (csp == null) {
             logger.debug("No CSP header found for $url; using bootstrap-origin-only policy")
         } else {
             logger.debug("Fetched CSP header for $url (${csp.length} chars)")
         }
 
-        return CspNavigationPolicy.fromCsp(csp, url)
+        val status = when {
+            headCsp.transportFailed || getCsp.transportFailed -> CspFetchStatus.TRANSPORT_FAILED
+            csp == null -> CspFetchStatus.HEADER_MISSING
+            else -> CspFetchStatus.HEADER_FOUND
+        }
+
+        return CspFetchResult(
+            policy = CspNavigationPolicy.fromCsp(csp, url),
+            status = status,
+        )
     }
 
-    private fun fetchCsp(url: String, method: String): String? =
+    private fun fetchCsp(url: String, method: String): CspHeaderFetchResult =
         try {
             logger.debug("Fetching CSP header with $method $url")
-            headerSource.fetch(url = url, method = method, headerName = CSP_HEADER)
+            CspHeaderFetchResult(headerSource.fetch(url = url, method = method, headerName = CSP_HEADER))
         } catch (exception: Exception) {
             logger.error(
                 "CSP $method fetch failed for $url: " +
                     "${exception::class.java.simpleName}: ${exception.message}",
                 exception,
             )
-            null
+            CspHeaderFetchResult(header = null, transportFailed = true)
         }
 
     companion object {
         private const val CSP_HEADER = "Content-Security-Policy"
+    }
+}
+
+data class CspFetchResult(
+    val policy: CspNavigationPolicy,
+    val status: CspFetchStatus,
+) {
+    val hasTransportFailure: Boolean = status == CspFetchStatus.TRANSPORT_FAILED
+}
+
+enum class CspFetchStatus {
+    HEADER_FOUND,
+    HEADER_MISSING,
+    TRANSPORT_FAILED,
+}
+
+private data class CspHeaderFetchResult(
+    val header: String?,
+    val transportFailed: Boolean = false,
+) {
+    companion object {
+        fun notAttempted(): CspHeaderFetchResult = CspHeaderFetchResult(header = null)
     }
 }
 

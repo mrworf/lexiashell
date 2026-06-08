@@ -42,6 +42,7 @@ class MainActivity : Activity() {
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        logger.debug(BuildProvenance.startupLogLine())
         logger.debug("MainActivity onCreate")
 
         requestWindowFeature(Window.FEATURE_NO_TITLE)

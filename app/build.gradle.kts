@@ -70,6 +70,15 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a")
+            isUniversalApk = false
+        }
+    }
+
     buildFeatures {
         buildConfig = true
     }

@@ -20,6 +20,8 @@ After the Android scaffold exists, the canonical validation command is:
 GRADLE_USER_HOME=$PWD/.gradle JAVA_HOME=$PWD/.jdk/temurin-17 ./gradlew :app:assembleDebug :app:lintDebug
 ```
 
+Release builds use `:app:assembleRelease` for an arm64-v8a sideload APK and `:app:bundleRelease` for the Google Play App Bundle.
+
 For slices before Gradle exists, validate with file inspection and `git status`.
 
 ## Slice Workflow

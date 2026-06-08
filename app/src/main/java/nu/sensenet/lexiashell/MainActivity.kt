@@ -3,6 +3,8 @@ package nu.sensenet.lexiashell
 import android.annotation.SuppressLint
 import android.annotation.TargetApi
 import android.app.Activity
+import android.app.GameManager
+import android.app.GameState
 import android.app.KeyguardManager
 import android.app.admin.DevicePolicyManager
 import android.content.Context
@@ -79,10 +81,12 @@ class MainActivity : Activity() {
 
                 override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
                     logger.debug("Page started $url")
+                    reportGameState(isPageLoading = true)
                 }
 
                 override fun onPageFinished(view: WebView, url: String) {
                     logger.debug("Page finished $url")
+                    reportGameState(isPageLoading = false)
                 }
 
                 @TargetApi(Build.VERSION_CODES.M)
@@ -162,6 +166,7 @@ class MainActivity : Activity() {
         logger.debug("MainActivity onResume")
         hideSystemBars()
         startLockTaskWhenPermitted()
+        reportGameState(isPageLoading = false)
     }
 
     override fun onPause() {
@@ -249,6 +254,31 @@ class MainActivity : Activity() {
 
         logger.debug("Starting lock task mode")
         startLockTask()
+    }
+
+    private fun reportGameState(isPageLoading: Boolean) {
+        if (!GameStateReportPolicy.shouldReport(Build.VERSION.SDK_INT)) {
+            return
+        }
+
+        reportGameStateOnSupportedSdk(GameStateReportPolicy.report(isPageLoading))
+    }
+
+    @TargetApi(Build.VERSION_CODES.TIRAMISU)
+    private fun reportGameStateOnSupportedSdk(report: GameStateReport) {
+        val gameManager = getSystemService(GameManager::class.java)
+        if (gameManager == null) {
+            logger.debug("Skipping game state report because GameManager is unavailable")
+            return
+        }
+
+        gameManager.setGameState(
+            GameState(
+                report.isLoading,
+                GameState.MODE_GAMEPLAY_UNINTERRUPTIBLE,
+            ),
+        )
+        logger.debug("Reported game state: isLoading=${report.isLoading}")
     }
 
     @Suppress("DEPRECATION")

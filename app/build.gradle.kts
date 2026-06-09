@@ -1,11 +1,16 @@
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
+import java.util.concurrent.TimeUnit
 
 plugins {
     id("com.android.application")
 }
 
-val geckoViewVersion = "151.0.20260601110758"
+val geckoViewVersionSelector = "latest.release"
+
+configurations.configureEach {
+    resolutionStrategy.cacheDynamicVersionsFor(0, TimeUnit.SECONDS)
+}
 
 fun gitOutput(vararg args: String): String =
     providers.exec {
@@ -15,6 +20,25 @@ fun gitOutput(vararg args: String): String =
 
 fun quotedBuildConfigString(value: String): String =
     "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+
+fun resolvedGeckoViewVersion(): String {
+    val configuration = configurations.detachedConfiguration(
+        dependencies.create("org.mozilla.geckoview:geckoview:$geckoViewVersionSelector"),
+    ).apply {
+        isTransitive = false
+        resolutionStrategy.cacheDynamicVersionsFor(0, TimeUnit.SECONDS)
+    }
+    return configuration
+        .incoming
+        .resolutionResult
+        .allComponents
+        .mapNotNull { it.moduleVersion }
+        .first {
+            it.group == "org.mozilla.geckoview" &&
+                it.name == "geckoview"
+        }
+        .version
+}
 
 android {
     namespace = "nu.sensenet.lexiashell"
@@ -61,7 +85,7 @@ android {
         buildConfigField(
             "String",
             "GECKOVIEW_VERSION",
-            quotedBuildConfigString(geckoViewVersion),
+            quotedBuildConfigString(resolvedGeckoViewVersion()),
         )
     }
 
@@ -86,7 +110,7 @@ android {
 
 dependencies {
     implementation("androidx.core:core:1.19.0")
-    implementation("org.mozilla.geckoview:geckoview:$geckoViewVersion")
+    implementation("org.mozilla.geckoview:geckoview:$geckoViewVersionSelector")
 
     testImplementation("junit:junit:4.13.2")
 }

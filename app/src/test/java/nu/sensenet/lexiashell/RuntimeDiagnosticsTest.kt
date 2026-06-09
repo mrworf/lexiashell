@@ -69,8 +69,8 @@ class RuntimeDiagnosticsTest {
     @Test
     fun formatsGeckoViewVersion() {
         assertEquals(
-            "GeckoView version: 151.0.20260601110758",
-            RuntimeDiagnostics.geckoViewVersionLine("151.0.20260601110758"),
+            "GeckoView version: 152.0.1",
+            RuntimeDiagnostics.geckoViewVersionLine("152.0.1"),
         )
     }
 

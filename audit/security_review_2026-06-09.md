@@ -51,7 +51,7 @@ The review mapped entry points and trust boundaries first, then inspected naviga
 - **Severity:** High
 - **CVSS v3.1:** 7.5 `CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:U/C:H/I:H/A:H`
 - **Confidence:** Medium
-- **Status:** Needs validation
+- **Status:** Addressed in follow-up commit by switching to dynamic latest stable GeckoView resolution and logging the concrete resolved version at startup. Release validation should continue confirming the resolved artifact.
 - **Affected components:** `app/build.gradle.kts`; GeckoView runtime dependency
 
 #### Evidence

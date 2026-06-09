@@ -55,12 +55,6 @@ sdkmanager \
     "build-tools;36.0.0" \
     "platforms;android-37.0"
 
-if [[ "${LEXIASHELL_WITH_EMULATOR:-0}" == "1" ]]; then
-    sdkmanager \
-        "emulator" \
-        "system-images;android-35;google_apis;x86_64"
-fi
-
 cat > "$ROOT_DIR/local.properties" <<EOF
 sdk.dir=$ANDROID_SDK_ROOT
 org.gradle.java.home=$JDK_DIR

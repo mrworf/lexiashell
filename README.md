@@ -60,7 +60,7 @@ GRADLE_USER_HOME=$PWD/.gradle JAVA_HOME=$PWD/.jdk/temurin-17 ./gradlew :app:bund
 
 ## CI and Releases
 
-GitHub Actions runs build, lint, unit tests, and an emulator smoke test for pushes and pull requests. Tags matching `v*` also build release APK/AAB artifacts and attach them to a GitHub Release.
+GitHub Actions runs build, lint, unit tests, and a GeckoView dependency report for pushes and pull requests. Tags matching `v*` also build release APK/AAB artifacts and attach them to a GitHub Release.
 
 ## Support
 

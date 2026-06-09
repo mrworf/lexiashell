@@ -85,6 +85,7 @@ android {
 }
 
 dependencies {
+    implementation("androidx.core:core:1.19.0")
     implementation("org.mozilla.geckoview:geckoview:$geckoViewVersion")
 
     testImplementation("junit:junit:4.13.2")

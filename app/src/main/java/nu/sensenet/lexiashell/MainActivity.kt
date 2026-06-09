@@ -58,7 +58,7 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        logger.debug(BuildProvenance.startupLogLine())
+        logger.startup(BuildProvenance.startupLogLine())
         logRuntimeDiagnostics()
         logger.debug("MainActivity onCreate")
 

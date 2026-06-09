@@ -8,8 +8,14 @@ interface LexiaLogger {
 }
 
 object AndroidLexiaLogger : LexiaLogger {
+    fun startup(message: String) {
+        Log.i(TAG, message)
+    }
+
     override fun debug(message: String) {
-        Log.d(TAG, message)
+        if (LexiaLogPolicy.shouldLogDebug(BuildConfig.DEBUG)) {
+            Log.d(TAG, message)
+        }
     }
 
     override fun error(message: String, throwable: Throwable?) {
@@ -21,4 +27,8 @@ object AndroidLexiaLogger : LexiaLogger {
     }
 
     private const val TAG = "LexiaShell"
+}
+
+object LexiaLogPolicy {
+    fun shouldLogDebug(isDebugBuild: Boolean): Boolean = isDebugBuild
 }

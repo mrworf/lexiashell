@@ -1,0 +1,23 @@
+{
+  "manifest_version": 2,
+  "name": "Lexia Shell Console Idle Monitor",
+  "version": "1.0",
+  "description": "Reports Lexia console output to the native shell during startup.",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "console-idle-monitor@lexiashell.sensenet.nu"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://www.lexiacore5.com/*"],
+      "js": ["monitor.js"],
+      "run_at": "document_start"
+    }
+  ],
+  "permissions": [
+    "nativeMessaging",
+    "nativeMessagingFromContent",
+    "geckoViewAddons"
+  ]
+}

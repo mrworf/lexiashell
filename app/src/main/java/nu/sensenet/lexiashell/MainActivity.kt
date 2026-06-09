@@ -29,7 +29,6 @@ import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ProgressBar
-import android.widget.TextView
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -40,7 +39,9 @@ import org.mozilla.geckoview.GeckoRuntimeSettings
 import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.GeckoSessionSettings
 import org.mozilla.geckoview.GeckoView
+import org.mozilla.geckoview.WebExtension
 import org.mozilla.geckoview.WebRequestError
+import org.json.JSONObject
 
 class MainActivity : Activity() {
     private lateinit var rootLayout: FrameLayout
@@ -52,6 +53,29 @@ class MainActivity : Activity() {
     private var loadingFailureDialog: AlertDialog? = null
     private var isGeckoSessionClosed = true
     private var isLoadingOverlayActive = true
+    private val splashRevealPolicy = SplashRevealPolicy()
+    private val splashRevealHandler = Handler(Looper.getMainLooper())
+    private val splashRevealRunnable = Runnable {
+        applySplashRevealDecision(splashRevealPolicy.decision(SystemClock.elapsedRealtime()))
+    }
+    private var consoleIdleMonitorExtension: WebExtension? = null
+    private val consoleIdleMonitorMessageDelegate = object : WebExtension.MessageDelegate {
+        override fun onMessage(
+            nativeApp: String,
+            message: Any,
+            sender: WebExtension.MessageSender,
+        ): GeckoResult<Any>? {
+            if (nativeApp != CONSOLE_IDLE_NATIVE_APP || sender.session !== geckoSession) {
+                return null
+            }
+
+            if (message is JSONObject && message.optString("type") == CONSOLE_OUTPUT_MESSAGE_TYPE) {
+                runOnUiThread { handleConsoleOutput() }
+            }
+
+            return null
+        }
+    }
     @Volatile
     private var isDestroyed = false
     private val diagnosticsHandler = Handler(Looper.getMainLooper())
@@ -78,7 +102,7 @@ class MainActivity : Activity() {
         configureFullscreenWindow()
 
         rootLayout = FrameLayout(this).apply {
-            setBackgroundColor(Color.BLACK)
+            setBackgroundColor(Color.WHITE)
         }
         geckoView = GeckoView(this).apply {
             layoutParams = FrameLayout.LayoutParams(
@@ -101,7 +125,7 @@ class MainActivity : Activity() {
         logGeckoViewRuntimeDiagnostics()
         hideSystemBars()
         logger.debug("Initial GeckoView content set; starting policy fetch")
-        loadLexiaAfterPolicyFetch()
+        installConsoleIdleMonitorThenLoadLexia()
     }
 
     override fun onResume() {
@@ -123,6 +147,7 @@ class MainActivity : Activity() {
     override fun onDestroy() {
         logger.debug("MainActivity onDestroy")
         isDestroyed = true
+        resetSplashRevealState()
         stopFdDiagnostics()
         if (this::geckoSession.isInitialized) {
             closeGeckoSession()
@@ -233,6 +258,7 @@ class MainActivity : Activity() {
         object : GeckoSession.ProgressDelegate {
             override fun onPageStart(session: GeckoSession, url: String) {
                 logger.debug("Page started $url")
+                resetSplashRevealState()
                 if (isLoadingOverlayActive) {
                     showLoadingOverlay()
                 }
@@ -332,7 +358,7 @@ class MainActivity : Activity() {
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = android.view.Gravity.CENTER
-            setBackgroundColor(Color.BLACK)
+            setBackgroundColor(Color.WHITE)
             layoutParams = FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT,
@@ -345,29 +371,18 @@ class MainActivity : Activity() {
                 setImageResource(R.drawable.lexia_shell_logo)
                 adjustViewBounds = true
                 contentDescription = getString(R.string.app_name)
-                layoutParams = LinearLayout.LayoutParams(dp(180), dp(180)).apply {
+                layoutParams = LinearLayout.LayoutParams(dp(360), dp(360)).apply {
                     bottomMargin = dp(28)
                 }
             },
         )
         content.addView(
-            TextView(this).apply {
-                text = getString(R.string.loading_message)
-                setTextColor(Color.WHITE)
-                textSize = 20f
-                gravity = android.view.Gravity.CENTER
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                ).apply {
-                    bottomMargin = dp(18)
-                }
-            },
-        )
-        content.addView(
-            ProgressBar(this).apply {
+            ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
                 isIndeterminate = true
-                layoutParams = LinearLayout.LayoutParams(dp(48), dp(48))
+                layoutParams = LinearLayout.LayoutParams(
+                    resources.displayMetrics.widthPixels / 4,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                )
             },
         )
 
@@ -391,9 +406,44 @@ class MainActivity : Activity() {
 
     private fun handleBrowserLoadEvent(event: BrowserLoadEvent, detail: String) {
         when (LoadingRecoveryPolicy.actionFor(event)) {
-            BrowserLoadAction.REVEAL_BROWSER -> revealBrowser()
-            BrowserLoadAction.SHOW_FAILURE -> showLoadingFailure(detail)
+            BrowserLoadAction.REVEAL_BROWSER -> handleSuccessfulPageStop()
+            BrowserLoadAction.SHOW_FAILURE -> {
+                resetSplashRevealState()
+                showLoadingFailure(detail)
+            }
         }
+    }
+
+    private fun handleSuccessfulPageStop() {
+        applySplashRevealDecision(
+            splashRevealPolicy.onPageFinished(SystemClock.elapsedRealtime()),
+        )
+    }
+
+    private fun handleConsoleOutput() {
+        if (isDestroyed || !isLoadingOverlayActive) {
+            return
+        }
+
+        applySplashRevealDecision(
+            splashRevealPolicy.onConsoleOutput(SystemClock.elapsedRealtime()),
+        )
+    }
+
+    private fun applySplashRevealDecision(decision: SplashRevealDecision) {
+        splashRevealHandler.removeCallbacks(splashRevealRunnable)
+        if (decision.revealNow) {
+            revealBrowser()
+            return
+        }
+
+        val delayMs = decision.scheduleDelayMs ?: return
+        splashRevealHandler.postDelayed(splashRevealRunnable, delayMs)
+    }
+
+    private fun resetSplashRevealState() {
+        splashRevealHandler.removeCallbacks(splashRevealRunnable)
+        splashRevealPolicy.reset()
     }
 
     private fun revealBrowser() {
@@ -401,6 +451,7 @@ class MainActivity : Activity() {
             return
         }
 
+        splashRevealHandler.removeCallbacks(splashRevealRunnable)
         loadingFailureDialog?.dismiss()
         loadingFailureDialog = null
         isLoadingOverlayActive = false
@@ -451,6 +502,7 @@ class MainActivity : Activity() {
     private fun retryWithClearedBrowserData() {
         logger.debug("Retry requested; clearing GeckoView storage before reload")
         isLoadingOverlayActive = true
+        resetSplashRevealState()
         showLoadingOverlay()
         resetGeckoSession()
 
@@ -460,19 +512,21 @@ class MainActivity : Activity() {
             .accept(
                 {
                     logger.debug("GeckoView storage cleared; retrying Lexia load")
-                    loadLexiaAfterPolicyFetch()
+                    installConsoleIdleMonitorThenLoadLexia()
                 },
                 { throwable ->
                     logger.error("GeckoView storage clearing failed; retrying anyway", throwable)
-                    loadLexiaAfterPolicyFetch()
+                    installConsoleIdleMonitorThenLoadLexia()
                 },
             )
     }
 
     private fun resetGeckoSession() {
+        resetSplashRevealState()
         closeGeckoSession()
         geckoSession = createGeckoSession()
         geckoView.setSession(geckoSession)
+        consoleIdleMonitorExtension?.let { attachConsoleIdleMonitor(it, geckoSession) }
         logGeckoViewRuntimeDiagnostics()
     }
 
@@ -757,6 +811,62 @@ class MainActivity : Activity() {
         logger.debug("Reported game state: isLoading=${report.isLoading}")
     }
 
+    private fun installConsoleIdleMonitorThenLoadLexia() {
+        consoleIdleMonitorExtension?.let { extension ->
+            attachConsoleIdleMonitor(extension, geckoSession)
+            loadLexiaAfterPolicyFetch()
+            return
+        }
+
+        processGeckoRuntime(this)
+            .webExtensionController
+            .ensureBuiltIn(CONSOLE_IDLE_MONITOR_LOCATION, CONSOLE_IDLE_MONITOR_ID)
+            .accept(
+                { extension ->
+                    runOnUiThread {
+                        if (isDestroyed) {
+                            return@runOnUiThread
+                        }
+
+                        if (extension == null) {
+                            logger.error(
+                                "Console idle monitor WebExtension was unavailable; " +
+                                    "using no-console fallback",
+                            )
+                            loadLexiaAfterPolicyFetch()
+                            return@runOnUiThread
+                        }
+
+                        logger.debug("Console idle monitor WebExtension installed")
+                        consoleIdleMonitorExtension = extension
+                        attachConsoleIdleMonitor(extension, geckoSession)
+                        loadLexiaAfterPolicyFetch()
+                    }
+                },
+                { throwable ->
+                    runOnUiThread {
+                        if (isDestroyed) {
+                            return@runOnUiThread
+                        }
+
+                        logger.error(
+                            "Console idle monitor WebExtension failed; using no-console fallback",
+                            throwable,
+                        )
+                        loadLexiaAfterPolicyFetch()
+                    }
+                },
+            )
+    }
+
+    private fun attachConsoleIdleMonitor(extension: WebExtension, session: GeckoSession) {
+        session.webExtensionController.setMessageDelegate(
+            extension,
+            consoleIdleMonitorMessageDelegate,
+            CONSOLE_IDLE_NATIVE_APP,
+        )
+    }
+
     private fun loadLexiaAfterPolicyFetch() {
         Thread {
             logger.debug("Policy fetch thread started for $LEXIA_CORE5_URL")
@@ -795,6 +905,11 @@ class MainActivity : Activity() {
 
     companion object {
         private const val LEXIA_CORE5_URL = "https://www.lexiacore5.com"
+        private const val CONSOLE_IDLE_MONITOR_LOCATION =
+            "resource://android/assets/console_idle_monitor/"
+        private const val CONSOLE_IDLE_MONITOR_ID = "console-idle-monitor@lexiashell.sensenet.nu"
+        private const val CONSOLE_IDLE_NATIVE_APP = "browser"
+        private const val CONSOLE_OUTPUT_MESSAGE_TYPE = "console-output"
         private const val PREFERENCES_NAME = "lexia_shell"
         private const val BATTERY_OPTIMIZATION_REQUESTED_KEY =
             "battery_optimization_exemption_requested"

@@ -1,5 +1,6 @@
 package nu.sensenet.lexiashell
 
+import android.animation.ObjectAnimator
 import android.annotation.TargetApi
 import android.app.Activity
 import android.app.ActivityManager
@@ -9,26 +10,22 @@ import android.app.GameState
 import android.app.KeyguardManager
 import android.app.admin.DevicePolicyManager
 import android.content.Context
-import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.res.Configuration
 import android.graphics.Color
-import android.net.Uri
+import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.os.PowerManager
 import android.os.Process
-import android.os.SystemClock
-import android.provider.Settings
 import android.view.View
 import android.view.Window
 import android.view.WindowManager
+import android.view.animation.LinearInterpolator
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
-import android.widget.ProgressBar
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -39,9 +36,7 @@ import org.mozilla.geckoview.GeckoRuntimeSettings
 import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.GeckoSessionSettings
 import org.mozilla.geckoview.GeckoView
-import org.mozilla.geckoview.WebExtension
 import org.mozilla.geckoview.WebRequestError
-import org.json.JSONObject
 
 class MainActivity : Activity() {
     private lateinit var rootLayout: FrameLayout
@@ -53,44 +48,13 @@ class MainActivity : Activity() {
     private var loadingFailureDialog: AlertDialog? = null
     private var isGeckoSessionClosed = true
     private var isLoadingOverlayActive = true
-    private val splashRevealPolicy = SplashRevealPolicy()
     private val splashRevealHandler = Handler(Looper.getMainLooper())
     private val splashRevealRunnable = Runnable {
-        applySplashRevealDecision(splashRevealPolicy.decision(SystemClock.elapsedRealtime()))
-    }
-    private var consoleIdleMonitorExtension: WebExtension? = null
-    private val consoleIdleMonitorMessageDelegate = object : WebExtension.MessageDelegate {
-        override fun onMessage(
-            nativeApp: String,
-            message: Any,
-            sender: WebExtension.MessageSender,
-        ): GeckoResult<Any>? {
-            if (nativeApp != CONSOLE_IDLE_NATIVE_APP || sender.session !== geckoSession) {
-                return null
-            }
-
-            if (message is JSONObject && message.optString("type") == CONSOLE_OUTPUT_MESSAGE_TYPE) {
-                runOnUiThread { handleConsoleOutput() }
-            }
-
-            return null
-        }
+        revealBrowser()
     }
     @Volatile
     private var isDestroyed = false
-    private val diagnosticsHandler = Handler(Looper.getMainLooper())
-    private val activityCreatedElapsedRealtimeMs = SystemClock.elapsedRealtime()
-    private var isFdDiagnosticsRunning = false
-    private val fdDiagnosticsRunnable = object : Runnable {
-        override fun run() {
-            if (!isFdDiagnosticsRunning || isDestroyed) {
-                return
-            }
-
-            logFdSnapshot()
-            diagnosticsHandler.postDelayed(this, FD_DIAGNOSTICS_INTERVAL_MS)
-        }
-    }
+    private val activityCreatedElapsedRealtimeMs = android.os.SystemClock.elapsedRealtime()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -125,22 +89,19 @@ class MainActivity : Activity() {
         logGeckoViewRuntimeDiagnostics()
         hideSystemBars()
         logger.debug("Initial GeckoView content set; starting policy fetch")
-        installConsoleIdleMonitorThenLoadLexia()
+        loadLexiaAfterPolicyFetch()
     }
 
     override fun onResume() {
         super.onResume()
         logger.debug("MainActivity onResume")
         hideSystemBars()
-        requestBatteryOptimizationExemptionWhenNeeded()
         startLockTaskWhenPermitted()
         reportGameState(isPageLoading = false)
-        startFdDiagnostics()
     }
 
     override fun onPause() {
         logger.debug("MainActivity onPause; leaving GeckoView runtime active")
-        stopFdDiagnostics()
         super.onPause()
     }
 
@@ -148,7 +109,6 @@ class MainActivity : Activity() {
         logger.debug("MainActivity onDestroy")
         isDestroyed = true
         resetSplashRevealState()
-        stopFdDiagnostics()
         if (this::geckoSession.isInitialized) {
             closeGeckoSession()
         }
@@ -377,17 +337,46 @@ class MainActivity : Activity() {
             },
         )
         content.addView(
-            ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
-                isIndeterminate = true
-                layoutParams = LinearLayout.LayoutParams(
-                    resources.displayMetrics.widthPixels / 4,
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                )
-            },
+            createIndeterminateLoadingBar(),
         )
 
         return content
     }
+
+    private fun createIndeterminateLoadingBar(): View {
+        val width = resources.displayMetrics.widthPixels / 4
+        val height = dp(6)
+        val segmentWidth = width / 3
+        val radius = height / 2f
+
+        val track = FrameLayout(this).apply {
+            clipToOutline = true
+            background = roundedDrawable(color = 0xFFE3E8EF.toInt(), radius = radius)
+            layoutParams = LinearLayout.LayoutParams(width, height)
+        }
+        val segment = View(this).apply {
+            background = roundedDrawable(color = 0xFF2563EB.toInt(), radius = radius)
+            layoutParams = FrameLayout.LayoutParams(segmentWidth, height)
+        }
+        track.addView(segment)
+
+        ObjectAnimator.ofFloat(segment, View.TRANSLATION_X, -segmentWidth.toFloat(), width.toFloat())
+            .apply {
+                duration = 1_000L
+                repeatCount = ObjectAnimator.INFINITE
+                interpolator = LinearInterpolator()
+                start()
+            }
+
+        return track
+    }
+
+    private fun roundedDrawable(color: Int, radius: Float): GradientDrawable =
+        GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            setColor(color)
+            cornerRadius = radius
+        }
 
     private fun dp(value: Int): Int =
         (value * resources.displayMetrics.density).toInt()
@@ -415,35 +404,12 @@ class MainActivity : Activity() {
     }
 
     private fun handleSuccessfulPageStop() {
-        applySplashRevealDecision(
-            splashRevealPolicy.onPageFinished(SystemClock.elapsedRealtime()),
-        )
-    }
-
-    private fun handleConsoleOutput() {
-        if (isDestroyed || !isLoadingOverlayActive) {
-            return
-        }
-
-        applySplashRevealDecision(
-            splashRevealPolicy.onConsoleOutput(SystemClock.elapsedRealtime()),
-        )
-    }
-
-    private fun applySplashRevealDecision(decision: SplashRevealDecision) {
         splashRevealHandler.removeCallbacks(splashRevealRunnable)
-        if (decision.revealNow) {
-            revealBrowser()
-            return
-        }
-
-        val delayMs = decision.scheduleDelayMs ?: return
-        splashRevealHandler.postDelayed(splashRevealRunnable, delayMs)
+        splashRevealHandler.postDelayed(splashRevealRunnable, SPLASH_REVEAL_DELAY_MS)
     }
 
     private fun resetSplashRevealState() {
         splashRevealHandler.removeCallbacks(splashRevealRunnable)
-        splashRevealPolicy.reset()
     }
 
     private fun revealBrowser() {
@@ -512,11 +478,11 @@ class MainActivity : Activity() {
             .accept(
                 {
                     logger.debug("GeckoView storage cleared; retrying Lexia load")
-                    installConsoleIdleMonitorThenLoadLexia()
+                    loadLexiaAfterPolicyFetch()
                 },
                 { throwable ->
                     logger.error("GeckoView storage clearing failed; retrying anyway", throwable)
-                    installConsoleIdleMonitorThenLoadLexia()
+                    loadLexiaAfterPolicyFetch()
                 },
             )
     }
@@ -526,7 +492,6 @@ class MainActivity : Activity() {
         closeGeckoSession()
         geckoSession = createGeckoSession()
         geckoView.setSession(geckoSession)
-        consoleIdleMonitorExtension?.let { attachConsoleIdleMonitor(it, geckoSession) }
         logGeckoViewRuntimeDiagnostics()
     }
 
@@ -554,7 +519,6 @@ class MainActivity : Activity() {
     }
 
     private fun configureFullscreenWindow() {
-        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         WindowCompat.setDecorFitsSystemWindows(window, false)
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
@@ -608,11 +572,6 @@ class MainActivity : Activity() {
             ),
         )
         logger.debug(
-            RuntimeDiagnostics.batteryOptimizationLine(
-                isIgnoringBatteryOptimizations = isIgnoringBatteryOptimizations(),
-            ),
-        )
-        logger.debug(
             RuntimeDiagnostics.runtimeUptimeLine(
                 processElapsedRealtimeMs = processElapsedRealtimeMs(),
                 activityElapsedRealtimeMs = activityElapsedRealtimeMs(),
@@ -635,11 +594,11 @@ class MainActivity : Activity() {
             return null
         }
 
-        return SystemClock.elapsedRealtime() - Process.getStartElapsedRealtime()
+        return android.os.SystemClock.elapsedRealtime() - Process.getStartElapsedRealtime()
     }
 
     private fun activityElapsedRealtimeMs(): Long =
-        SystemClock.elapsedRealtime() - activityCreatedElapsedRealtimeMs
+        android.os.SystemClock.elapsedRealtime() - activityCreatedElapsedRealtimeMs
 
     private fun logRecentExitReasons() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
@@ -689,103 +648,6 @@ class MainActivity : Activity() {
         return gameManager.gameMode
     }
 
-    private fun isIgnoringBatteryOptimizations(): Boolean? {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
-            return null
-        }
-
-        val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
-        return powerManager.isIgnoringBatteryOptimizations(packageName)
-    }
-
-    private fun requestBatteryOptimizationExemptionWhenNeeded() {
-        val isIgnoringBatteryOptimizations = isIgnoringBatteryOptimizations() ?: return
-        val preferences = getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
-        val hasRequestedBefore = preferences.getBoolean(
-            BATTERY_OPTIMIZATION_REQUESTED_KEY,
-            false,
-        )
-
-        if (!BatteryOptimizationRequestPolicy.shouldRequest(
-                sdkInt = Build.VERSION.SDK_INT,
-                isIgnoringBatteryOptimizations = isIgnoringBatteryOptimizations,
-                hasRequestedBefore = hasRequestedBefore,
-            )
-        ) {
-            logger.debug(
-                "Skipping battery optimization exemption request: " +
-                    "ignoring=$isIgnoringBatteryOptimizations requestedBefore=$hasRequestedBefore",
-            )
-            return
-        }
-
-        logger.debug("Showing battery optimization exemption explanation")
-        AlertDialog.Builder(this)
-            .setTitle(R.string.battery_exemption_dialog_title)
-            .setMessage(R.string.battery_exemption_dialog_message)
-            .setPositiveButton(R.string.battery_exemption_dialog_continue) { _, _ ->
-                markBatteryOptimizationExemptionRequested(preferences)
-                launchBatteryOptimizationExemptionRequest()
-            }
-            .setNegativeButton(R.string.battery_exemption_dialog_not_now) { _, _ ->
-                markBatteryOptimizationExemptionRequested(preferences)
-                logger.debug("Battery optimization exemption request postponed by user")
-            }
-            .setOnCancelListener {
-                markBatteryOptimizationExemptionRequested(preferences)
-                logger.debug("Battery optimization exemption explanation dismissed")
-            }
-            .show()
-    }
-
-    private fun markBatteryOptimizationExemptionRequested(
-        preferences: android.content.SharedPreferences,
-    ) {
-        preferences.edit()
-            .putBoolean(BATTERY_OPTIMIZATION_REQUESTED_KEY, true)
-            .apply()
-    }
-
-    private fun launchBatteryOptimizationExemptionRequest() {
-        logger.debug("Requesting battery optimization exemption")
-        try {
-            startActivity(
-                Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
-                    data = Uri.parse("package:$packageName")
-                },
-            )
-        } catch (exception: RuntimeException) {
-            logger.error("Battery optimization exemption request failed", exception)
-        }
-    }
-
-    private fun startFdDiagnostics() {
-        if (isFdDiagnosticsRunning) {
-            return
-        }
-
-        isFdDiagnosticsRunning = true
-        logFdSnapshot()
-        diagnosticsHandler.postDelayed(fdDiagnosticsRunnable, FD_DIAGNOSTICS_INTERVAL_MS)
-    }
-
-    private fun stopFdDiagnostics() {
-        if (!isFdDiagnosticsRunning) {
-            return
-        }
-
-        isFdDiagnosticsRunning = false
-        diagnosticsHandler.removeCallbacks(fdDiagnosticsRunnable)
-    }
-
-    private fun logFdSnapshot() {
-        logger.debug(
-            FileDescriptorDiagnostics.snapshotLine(
-                FileDescriptorDiagnostics.captureProcSelf(),
-            ),
-        )
-    }
-
     private fun reportGameState(isPageLoading: Boolean) {
         if (!GameStateReportPolicy.shouldReport(Build.VERSION.SDK_INT)) {
             return
@@ -809,62 +671,6 @@ class MainActivity : Activity() {
             ),
         )
         logger.debug("Reported game state: isLoading=${report.isLoading}")
-    }
-
-    private fun installConsoleIdleMonitorThenLoadLexia() {
-        consoleIdleMonitorExtension?.let { extension ->
-            attachConsoleIdleMonitor(extension, geckoSession)
-            loadLexiaAfterPolicyFetch()
-            return
-        }
-
-        processGeckoRuntime(this)
-            .webExtensionController
-            .ensureBuiltIn(CONSOLE_IDLE_MONITOR_LOCATION, CONSOLE_IDLE_MONITOR_ID)
-            .accept(
-                { extension ->
-                    runOnUiThread {
-                        if (isDestroyed) {
-                            return@runOnUiThread
-                        }
-
-                        if (extension == null) {
-                            logger.error(
-                                "Console idle monitor WebExtension was unavailable; " +
-                                    "using no-console fallback",
-                            )
-                            loadLexiaAfterPolicyFetch()
-                            return@runOnUiThread
-                        }
-
-                        logger.debug("Console idle monitor WebExtension installed")
-                        consoleIdleMonitorExtension = extension
-                        attachConsoleIdleMonitor(extension, geckoSession)
-                        loadLexiaAfterPolicyFetch()
-                    }
-                },
-                { throwable ->
-                    runOnUiThread {
-                        if (isDestroyed) {
-                            return@runOnUiThread
-                        }
-
-                        logger.error(
-                            "Console idle monitor WebExtension failed; using no-console fallback",
-                            throwable,
-                        )
-                        loadLexiaAfterPolicyFetch()
-                    }
-                },
-            )
-    }
-
-    private fun attachConsoleIdleMonitor(extension: WebExtension, session: GeckoSession) {
-        session.webExtensionController.setMessageDelegate(
-            extension,
-            consoleIdleMonitorMessageDelegate,
-            CONSOLE_IDLE_NATIVE_APP,
-        )
     }
 
     private fun loadLexiaAfterPolicyFetch() {
@@ -905,15 +711,7 @@ class MainActivity : Activity() {
 
     companion object {
         private const val LEXIA_CORE5_URL = "https://www.lexiacore5.com"
-        private const val CONSOLE_IDLE_MONITOR_LOCATION =
-            "resource://android/assets/console_idle_monitor/"
-        private const val CONSOLE_IDLE_MONITOR_ID = "console-idle-monitor@lexiashell.sensenet.nu"
-        private const val CONSOLE_IDLE_NATIVE_APP = "browser"
-        private const val CONSOLE_OUTPUT_MESSAGE_TYPE = "console-output"
-        private const val PREFERENCES_NAME = "lexia_shell"
-        private const val BATTERY_OPTIMIZATION_REQUESTED_KEY =
-            "battery_optimization_exemption_requested"
-        private const val FD_DIAGNOSTICS_INTERVAL_MS = 30_000L
+        private const val SPLASH_REVEAL_DELAY_MS = 1_000L
         private const val RECENT_EXIT_REASON_LIMIT = 3
         private val GECKO_RUNTIME_LOCK = Any()
         @Volatile

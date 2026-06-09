@@ -11,9 +11,6 @@ object RuntimeDiagnostics {
             "legacyIsGame=$legacyIsGame " +
             "gameMode=${gameMode ?: "unavailable"}"
 
-    fun batteryOptimizationLine(isIgnoringBatteryOptimizations: Boolean?): String =
-        "Battery optimization: ignoring=${isIgnoringBatteryOptimizations ?: "unsupported"}"
-
     fun memoryPressureLine(level: Int): String =
         "Memory pressure: level=$level meaning=${trimMemoryLevelName(level)}"
 

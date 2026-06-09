@@ -29,22 +29,6 @@ class RuntimeDiagnosticsTest {
     }
 
     @Test
-    fun formatsBatteryOptimizationState() {
-        assertEquals(
-            "Battery optimization: ignoring=true",
-            RuntimeDiagnostics.batteryOptimizationLine(isIgnoringBatteryOptimizations = true),
-        )
-    }
-
-    @Test
-    fun formatsUnsupportedBatteryOptimizationState() {
-        assertEquals(
-            "Battery optimization: ignoring=unsupported",
-            RuntimeDiagnostics.batteryOptimizationLine(isIgnoringBatteryOptimizations = null),
-        )
-    }
-
-    @Test
     fun formatsKnownMemoryPressureLevel() {
         assertEquals(
             "Memory pressure: level=15 meaning=running-critical",

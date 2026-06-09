@@ -20,6 +20,8 @@ After the Android scaffold exists, the canonical validation command is:
 GRADLE_USER_HOME=$PWD/.gradle JAVA_HOME=$PWD/.jdk/temurin-17 ./gradlew :app:assembleDebug :app:lintDebug
 ```
 
+In the Codex sandbox, Gradle may fail before compilation with `Could not determine a usable wildcard IP for this machine` while creating its file-lock contention service. When running Gradle validation from Codex, request escalation for the Gradle command up front instead of first retrying inside the sandbox.
+
 Release builds use `:app:assembleRelease` for an arm64-v8a sideload APK and `:app:bundleRelease` for the Google Play App Bundle.
 
 For slices before Gradle exists, validate with file inspection and `git status`.

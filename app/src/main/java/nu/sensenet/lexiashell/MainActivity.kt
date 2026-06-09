@@ -421,13 +421,22 @@ class MainActivity : Activity() {
         loadingFailureDialog?.dismiss()
         loadingFailureDialog = null
         isLoadingOverlayActive = false
+        geckoView.animate().cancel()
+        loadingOverlay.animate().cancel()
         geckoView.visibility = View.VISIBLE
+        geckoView.alpha = 0f
+        loadingOverlay.alpha = 1f
         geckoView.animate()
             .alpha(1f)
+            .setDuration(LoadingRecoveryPolicy.BROWSER_REVEAL_ANIMATION_MS)
+            .start()
+        loadingOverlay.animate()
+            .alpha(0f)
             .setDuration(LoadingRecoveryPolicy.BROWSER_REVEAL_ANIMATION_MS)
             .withEndAction {
                 if (!isDestroyed) {
                     loadingOverlay.visibility = View.GONE
+                    loadingOverlay.alpha = 1f
                 }
             }
             .start()

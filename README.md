@@ -14,6 +14,14 @@ Lexia Shell uses GeckoView instead, which is Firefox-based. It is a bit less spe
 
 This is not a general-purpose browser. There are no tabs, no navigation controls, no settings screen, and no tracking. The app exists to load `https://www.lexiacore5.com` and keep the lesson surface clean.
 
+## Disclosure
+
+Lexia Shell is an independent, unofficial project. It is not affiliated with,
+sponsored by, endorsed by, or approved by Lexia Learning or Cambium Learning Group.
+Lexia, Lexia Core5, and related marks belong to their respective owners.
+
+I'm just a parent who doesn't want to buy an iPad ;-)
+
 ## Trust, Build, Verify
 
 The code is 100% open source. 

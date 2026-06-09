@@ -24,13 +24,19 @@ I'm just a parent who doesn't want to buy an iPad ;-)
 
 ## Trust, Build, Verify
 
-The code is 100% open source. 
+This project is licensed under the GNU General Public License v3 or later (see [LICENSE](./LICENSE)). Note that the embedded GeckoView browser engine is covered by its own Mozilla MPL 2.0 license, not this project's GPL. Please review GeckoView's license terms separately.
 
-Full disclosure: it was created with AI assistance with the supervision, direction, and design. That does not make it magic, but it does make it inspectable. Security and architecture reviews are kept under `audit/`, and the app does not log user data. 
+### AI Usage
 
-I have no interest in adding telemetry.
+Full disclosure: this project was created with AI assistance, under careful supervision, direction, and design. That doesn’t make it magic, but it does make it fully inspectable. Security and architecture reviews are kept under `audit/`.
 
-If you want extra confidence, you can build it yourself. The app embeds build provenance such as the source commit, build timestamp, and whether tracked source files were modified, so you can tell what you are running.
+### Tracking / Telemetry
+
+The application has no tracking or telemetry built-in.
+
+### Versioning
+
+The app embeds build provenance such as the source commit, build timestamp, and whether source files were modified from the repository, so you can tell what you are running.
 
 ## Building
 

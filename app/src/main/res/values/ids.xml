@@ -1,0 +1,4 @@
+<resources>
+    <item name="gecko_view" type="id" />
+    <item name="loading_overlay" type="id" />
+</resources>

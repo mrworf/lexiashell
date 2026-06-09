@@ -69,6 +69,7 @@ class MainActivity : Activity() {
             setBackgroundColor(Color.WHITE)
         }
         geckoView = GeckoView(this).apply {
+            id = R.id.gecko_view
             layoutParams = FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT,
@@ -316,6 +317,7 @@ class MainActivity : Activity() {
 
     private fun createLoadingOverlay(): View {
         val content = LinearLayout(this).apply {
+            id = R.id.loading_overlay
             orientation = LinearLayout.VERTICAL
             gravity = android.view.Gravity.CENTER
             setBackgroundColor(Color.WHITE)

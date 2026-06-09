@@ -1,5 +1,7 @@
 # Lexia Shell
 
+[![Android CI](https://github.com/mrworf/lexiashell/actions/workflows/android.yml/badge.svg?branch=main)](https://github.com/mrworf/lexiashell/actions/workflows/android.yml)
+
 <img src="./app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" alt="Lexia Shell app icon" width="160" align="right">
 
 Lexia Shell is a tiny native Android kiosk application for [Lexia Core5](https://www.lexiacore5.com). It is built for one job: open Core5 fullscreen, in desktop mode, and stay out of the way.
@@ -41,6 +43,10 @@ For a Google Play App Bundle:
 ```sh
 GRADLE_USER_HOME=$PWD/.gradle JAVA_HOME=$PWD/.jdk/temurin-17 ./gradlew :app:bundleRelease
 ```
+
+## CI and Releases
+
+GitHub Actions runs build, lint, unit tests, and an emulator smoke test for pushes and pull requests. Tags matching `v*` also build release APK/AAB artifacts and attach them to a GitHub Release.
 
 ## Support
 

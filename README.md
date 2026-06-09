@@ -1,5 +1,7 @@
 # Lexia Shell
 
+<img src="./app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" alt="Lexia Shell app icon" width="160" align="right">
+
 Lexia Shell is a tiny native Android kiosk application for [Lexia Core5](https://www.lexiacore5.com). It is built for one job: open Core5 fullscreen, in desktop mode, and stay out of the way.
 
 Why does this exist? Because there is no current Lexia Core5 Android app. 
